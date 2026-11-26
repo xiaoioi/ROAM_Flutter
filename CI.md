@@ -1,6 +1,13 @@
-# GitCode Actions 自动构建说明
+# 自动构建说明（GitCode Actions / GitHub Actions）
 
-仓库已配置 `.gitcode/workflows/build.yml`，在 GitCode 上可自动构建并上传：
+仓库已配置两套工作流：
+
+| 平台 | 工作流文件 | 用途 |
+|---|---|---|
+| GitCode | `.gitcode/workflows/build.yml` | 构建产物上传为流水线制品 |
+| GitHub | `.github/workflows/build-release.yml` | 构建产物直接发布到 GitHub Release |
+
+两者共用 `tool/ci_build.sh`，构建内容一致：
 
 - Android：`arm64-v8a` / `armeabi-v7a` 两个 release APK
 - HarmonyOS NEXT：未签名 HAP（versionCode 与 pubspec.yaml 对齐）
@@ -50,3 +57,21 @@ HAP 是**未签名**包，不能直接 `hdc install`。需要签名时用 DevEco
 - 国内网络下默认走 `pub.flutter-io.cn` / `storage.flutter-io.cn` 镜像；如需改回官方源，删掉 `tool/ci_build.sh` 里的 `PUB_HOSTED_URL`、`FLUTTER_STORAGE_BASE_URL` 默认值。
 - HAP 构建第一次失败是**正常现象**：那一趟只为让 ohpm 解包 `flutter_ohos.har`，随后脚本打 API 18 兼容补丁再构建一次。
 - 版本号直接读 `pubspec.yaml`，升版本只需改 `version: x.y.z+build`，无需改 workflow。
+
+## 6. GitHub Actions 发布 Release
+
+`.github/workflows/build-release.yml` 在 **push `v*` 标签** 或 **Actions 页手动运行** 时触发，构建完成后用 `softprops/action-gh-release@v2` 创建 Release，把 `dist/` 下的 APK 与未签名 HAP 作为附件上传，并自动生成 Release Notes。
+
+手动运行时可填 `tag`（如 `v1.0.31`）；留空则读 `pubspec.yaml` 的版本号生成 `v<版本>`。标签不存在时 Release Action 会基于当前提交自动创建。
+
+所需权限：仓库 **Settings → Actions → General → Workflow permissions** 选 **Read and write permissions**，让内置的 `GITHUB_TOKEN` 能创建 Release。无需额外 Secret。
+
+推荐发布流程：
+
+```bash
+# 改 pubspec.yaml 的 version，提交后打 tag
+git tag v1.0.31
+git push origin main --tags
+```
+
+GitHub 上首次运行同样要下载约 4GB 工具链；`actions/cache@v4` 会缓存工具链与依赖，后续运行显著加快。GitHub 免费 runner 的缓存上限是单仓库 10GB，这套工具链接近上限，若触发缓存淘汰只影响构建耗时，不影响结果。
