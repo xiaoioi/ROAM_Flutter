@@ -156,12 +156,54 @@ class RoamGlassPanel extends StatelessWidget {
       );
     }
 
-    return ClipRRect(
+    final body = ClipRRect(
       borderRadius: borderRadius,
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        child: ColoredBox(color: tint, child: child),
+        child: DecoratedBox(
+          // OS4 三层材质：左上高光 → 底部略沉，避免整块纯色像贴纸。
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color.alphaBlend(
+                  Colors.white.withValues(alpha: isDark ? 0.06 : 0.12),
+                  tint,
+                ),
+                tint,
+                Color.alphaBlend(
+                  Colors.black.withValues(alpha: isDark ? 0.10 : 0.02),
+                  tint,
+                ),
+              ],
+              stops: const [0, 0.55, 1],
+            ),
+          ),
+          child: child,
+        ),
       ),
+    );
+
+    // 描边放在裁剪外面，圆角处不会缺一条。
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: borderRadius,
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.14)
+              : Colors.white.withValues(alpha: 0.9),
+          width: 0.9,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.36 : 0.08),
+            blurRadius: 28,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: body,
     );
   }
 }

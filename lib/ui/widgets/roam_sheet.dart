@@ -36,8 +36,8 @@ Future<T?> showRoamSheet<T>({
           child: RoamGlassPanel(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
             surfaceColor: isDark
-                ? const Color(0xFF0B1424).withValues(alpha: 0.80)
-                : Colors.white.withValues(alpha: 0.86),
+                ? const Color(0xFF0F1524).withValues(alpha: 0.94)
+                : Colors.white.withValues(alpha: 0.97),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

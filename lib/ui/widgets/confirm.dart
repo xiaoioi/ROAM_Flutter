@@ -172,11 +172,13 @@ class _RoamDialog extends StatelessWidget {
       insetPadding: const EdgeInsets.symmetric(horizontal: 34),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
-        child: MiuixSurface(
-          cornerRadius: 28,
-          color: isDark ? const Color(0xFF1C1C22) : Colors.white,
-          contentColor: fg,
-          shadowElevation: 24,
+        child: MiuixGlassPanel(
+          shape: const MiuixGlassShape(cornerRadius: 28),
+          material: MiuixGlassMaterials.dialogGlass(isDark),
+          stroke: MiuixGlassStrokes.big(isDark),
+          shadow: MiuixGlassShadows.floating,
+          fill: isDark ? const Color(0xFF1C1C22) : Colors.white,
+          shading: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 22, 24, 16),
             child: Column(

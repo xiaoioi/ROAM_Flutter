@@ -448,32 +448,54 @@ class _RoamBottomBar extends StatelessWidget {
         if (catalog[id] != null) catalog[id]!,
     ];
 
-    return Container(
-      color: isDark ? Colors.black : RoamColors.daySky,
-      padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
-      child: SizedBox(
-        height: 50,
-        child: Row(
-          children: [
-            const SizedBox(width: 15),
-            for (final item in items)
-              Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: item.$3 ? item.$4 : null,
-                  child: Center(
-                    child: Image.asset(
-                      item.$1,
-                      width: 24,
-                      height: 24,
-                      color: item.$3 ? active : dim,
-                      semanticLabel: item.$2,
+    return DecoratedBox(
+      // OS4 底栏：一层极轻的顶亮底暗渐变 + 0.6dp 发丝分隔，替代纯色块。
+      // 这里不做折射玻璃：网页区是 platform view，截图采样不到，
+      // 折射出来会是一片脏纹理，反而更差。
+      decoration: BoxDecoration(
+        color: isDark ? Colors.black : RoamColors.daySky,
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: isDark
+              ? [const Color(0xFF0A0A0C), Colors.black]
+              : [const Color(0xFFF7F7F8), RoamColors.daySky],
+        ),
+        border: Border(
+          top: BorderSide(
+            color: (isDark ? Colors.white : Colors.black).withValues(
+              alpha: isDark ? 0.08 : 0.05,
+            ),
+            width: 0.6,
+          ),
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
+        child: SizedBox(
+          height: 50,
+          child: Row(
+            children: [
+              const SizedBox(width: 15),
+              for (final item in items)
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: item.$3 ? item.$4 : null,
+                    child: Center(
+                      child: Image.asset(
+                        item.$1,
+                        width: 24,
+                        height: 24,
+                        color: item.$3 ? active : dim,
+                        semanticLabel: item.$2,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            const SizedBox(width: 15),
-          ],
+              const SizedBox(width: 15),
+            ],
+          ),
         ),
       ),
     );
