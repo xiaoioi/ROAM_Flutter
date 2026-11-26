@@ -91,6 +91,24 @@ void main() {
     expect(index.value, 2);
   });
 
+  testWidgets('点在段间缝隙也能落到对应段', (tester) async {
+    // 从第 3 段开始，点第 1、2 段之间的缝：官方那三段各自只覆盖自己的
+    // 矩形，缝隙里点了原本没有任何反应，这里由外层坐标定位兜住。
+    final index = ValueNotifier<int>(2);
+    addTearDown(index.dispose);
+    await tester.pumpWidget(_host(index));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final row = tester.getRect(find.byType(RoamSegmented));
+    const inner = 340 - 6.0;
+    const gap = 8.0;
+    const segment = (inner - gap * 2) / 3;
+    final gapX = row.left + 3 + segment + gap * .6;
+    await tester.tapAt(Offset(gapX, row.center.dy));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(index.value, 0);
+  });
+
   testWidgets('横向拖动经过的段都会切换', (tester) async {
     final index = ValueNotifier<int>(0);
     addTearDown(index.dispose);

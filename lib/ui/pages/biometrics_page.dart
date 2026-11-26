@@ -63,7 +63,7 @@ class _BiometricsPageState extends State<BiometricsPage> {
           title: '生物验证与锁定',
           child: ListView(
             padding: EdgeInsets.only(
-              top: RoamPageScaffold.contentTopPadding + 2,
+              top: RoamPageScaffold.topPadding(context) + 2,
               bottom: 40,
             ),
             physics: const BouncingScrollPhysics(),

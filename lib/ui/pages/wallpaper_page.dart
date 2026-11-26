@@ -129,7 +129,7 @@ class _WallpaperPageState extends State<WallpaperPage> {
       child: Padding(
         padding: EdgeInsets.fromLTRB(
           25,
-          RoamPageScaffold.contentTopPadding + 8,
+          RoamPageScaffold.topPadding(context) + 8,
           25,
           22,
         ),

@@ -1,12 +1,10 @@
 // ignore_for_file: deprecated_member_use
 
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_miuix/miuix.dart';
 
 import 'predictive_back.dart';
-import 'roam_backdrop_scope.dart';
+import 'roam_popup_glass.dart';
 
 /// 对话框底部按钮：点按后以 [value] 关闭对话框。
 class RoamDialogAction<T> {
@@ -25,9 +23,8 @@ class RoamDialogAction<T> {
 
 /// 通用 miuix 风格对话框（标题 + 说明 + 自定义内容 + 胶囊按钮）。
 ///
-/// 表面走库的 `miuixGlassDialogSurface`：dialogGlass 三层材质 + small 高光
-/// 描边 + 主题 background 兜底色，遮罩色也取 `GlassDialogDefaults.scrimColor`。
-/// [RoamBackdropScope] 里的页面快照负责让对话框背后真的是糊的。
+/// 表面走 [RoamPopupGlass]：整块实时高斯 + dialogGlass 材质色 + 高光描边，
+/// 遮罩色取 `GlassDialogDefaults.scrimColor`。
 Future<T?> showRoamDialog<T>({
   required BuildContext context,
   required String title,
@@ -35,7 +32,6 @@ Future<T?> showRoamDialog<T>({
   String? message,
   Widget? body,
 }) {
-  final backdrop = RoamBackdropScope.samplingOf(context);
   return showDialog<T>(
     context: context,
     barrierColor: MiuixGlassDialogDefaults.scrimColor,
@@ -46,7 +42,6 @@ Future<T?> showRoamDialog<T>({
         title: title,
         message: message,
         body: body,
-        backdrop: backdrop,
         actions: [
           for (final action in actions)
             _DialogAction(
@@ -101,7 +96,6 @@ Future<String?> showRoamInput({
   String confirmLabel = '保存',
 }) {
   final controller = TextEditingController(text: initialValue);
-  final backdrop = RoamBackdropScope.samplingOf(context);
   return showDialog<String>(
     context: context,
     barrierColor: MiuixGlassDialogDefaults.scrimColor,
@@ -111,7 +105,6 @@ Future<String?> showRoamInput({
       child: _RoamDialog(
         title: title,
         message: message,
-        backdrop: backdrop,
         body: Padding(
           padding: const EdgeInsets.only(top: 16),
           child: MiuixTextField(
@@ -158,43 +151,29 @@ class _DialogAction {
 
 /// 柔光玻璃对话框：28dp squircle、标题 17sp、正文 14sp、底部胶囊按钮。
 ///
-/// 表面由库的 `miuixGlassDialogSurface` 出（与 `MiuixGlassDialog` 同一套），
-/// 没有页面快照时退回 BackdropFilter + 同一份 dialogGlass 材质，
-/// 保证网页 tab（platform view 不进快照）上也是"背后是糊的"。
+/// 表面由 [RoamPopupGlass] 出：整块实时高斯 + miuix 弹层材质与描边，
+/// 网页 tab（platform view 不进快照）上同样能糊。
 class _RoamDialog extends StatelessWidget {
   const _RoamDialog({
     required this.title,
     required this.actions,
     this.message,
     this.body,
-    this.backdrop,
   });
 
   final String title;
   final String? message;
   final Widget? body;
-  final MiuixBackdrop? backdrop;
   final List<_DialogAction> actions;
 
   @override
   Widget build(BuildContext context) {
     final miuix = MiuixTheme.of(context);
-    final dark = miuix.colors.background.computeLuminance() < .5;
     final fg = miuix.colors.onSurface;
     final sub = miuix.colors.onSurfaceVariantSummary;
-    final hasBackdrop = backdrop?.hasContent ?? false;
-
-    final fallbackFill = (dark ? const Color(0xFF242424) : Colors.white)
-        .withValues(alpha: 0.82);
-    Widget surface = miuixGlassDialogSurface(
-      backdrop: hasBackdrop ? backdrop : null,
-      containerColor: hasBackdrop ? null : fallbackFill,
-    )(
-      context,
-      28,
-      MiuixGlassDialogDefaults.scrimColor,
-      1.0,
-      Padding(
+    final surface = RoamPopupGlass(
+      borderRadius: BorderRadius.circular(28),
+      child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 22, 24, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -232,17 +211,6 @@ class _RoamDialog extends StatelessWidget {
         ),
       ),
     );
-
-    if (!hasBackdrop) {
-      final blur = MiuixGlassDialogDefaults.material(context).blurRadius * .45;
-      surface = ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-          child: surface,
-        ),
-      );
-    }
 
     return Dialog(
       backgroundColor: Colors.transparent,

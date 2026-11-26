@@ -115,7 +115,7 @@ class LegalPage extends StatelessWidget {
       child: ListView(
         padding: EdgeInsets.fromLTRB(
           25,
-          RoamPageScaffold.contentTopPadding + 10,
+          RoamPageScaffold.topPadding(context) + 10,
           25,
           40,
         ),

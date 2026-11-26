@@ -85,7 +85,7 @@ class _BottomBarCustomizePageState extends State<BottomBarCustomizePage> {
       child: ListView(
         padding: EdgeInsets.fromLTRB(
           25,
-          RoamPageScaffold.contentTopPadding + 10,
+          RoamPageScaffold.topPadding(context) + 10,
           25,
           24,
         ),

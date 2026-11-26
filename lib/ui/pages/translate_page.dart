@@ -203,7 +203,7 @@ class _TranslatePageState extends State<TranslatePage> {
       child: ListView(
         padding: EdgeInsets.fromLTRB(
           20,
-          RoamPageScaffold.contentTopPadding + 4,
+          RoamPageScaffold.topPadding(context) + 4,
           20,
           40 + MediaQuery.paddingOf(context).bottom,
         ),

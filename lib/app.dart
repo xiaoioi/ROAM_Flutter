@@ -195,9 +195,16 @@ class _RoamAppState extends State<RoamApp> {
                           right: 0,
                           // 底栏 50dp + 手势条安全区，再留 8dp 呼吸；提示不压工具栏。
                           bottom: 58 + MediaQuery.paddingOf(context).bottom,
-                          child: MiuixSnackbarHost(
-                            state: roamSnackbarHost,
-                            blurSigma: 28,
+                          child: ListenableBuilder(
+                            listenable: GlassRuntime.repaint,
+                            builder: (context, _) => MiuixSnackbarHost(
+                              state: roamSnackbarHost,
+                              // 材质关闭 / 性能优先时不跑背景模糊。
+                              blurSigma:
+                                  GlassRuntime.mode == RoamGlassMode.standard
+                                  ? 28
+                                  : 0,
+                            ),
                           ),
                         ),
                       ],

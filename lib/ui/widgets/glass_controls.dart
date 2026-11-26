@@ -27,8 +27,23 @@ final miuixBackdrop = MiuixLayerBackdrop();
 /// Kyant 液态玻璃（fluid_glass）已整体移除：它的 `lens()` 是球面透镜，
 /// 在 46dp 圆钮这类小控件上会把背景拉成一颗带色散条纹的玻璃球；而且
 /// fragment shader 在 Impeller 下逐帧重算，滚动时明显掉帧。
+/// 玻璃的三种形态，由两个开关组合出来：
+///
+///  - [off]：「材质显示效果」关闭 → 纯色背景，不模糊、不描光；
+///  - [performance]：「高斯模糊效果」= 性能优先 → 简单模糊（半透明磨砂），
+///    不做实时高斯采样，只叠一层轮廓光；
+///  - [standard]：两者都开 → 实时高斯模糊 + 高光描边。
+enum RoamGlassMode { off, performance, standard }
+
 abstract final class GlassRuntime {
   static final ValueNotifier<bool> material = ValueNotifier(true);
+
+  /// 当前玻璃形态（[material] / [performance] 的组合结果）。
+  static RoamGlassMode get mode {
+    if (!material.value) return RoamGlassMode.off;
+    if (performance.value) return RoamGlassMode.performance;
+    return RoamGlassMode.standard;
+  }
   static final ValueNotifier<bool> rimLight = ValueNotifier(true);
   static final ValueNotifier<bool> edgeFade = ValueNotifier(true);
   static final ValueNotifier<bool> performance = ValueNotifier(false);
@@ -56,6 +71,20 @@ abstract final class GlassRuntime {
   // ignore: unnecessary_getters_setters
   static set materialValue(bool v) => material.value = v;
 }
+
+/// 轮廓光描边的颜色：按「壁纸亮度」取对比色——深色底描白边，浅色底描浅黑边。
+///
+/// 这里用主题亮度代指壁纸亮度：浅色主题下的壁纸/背景基本都是亮的，
+/// 深色主题反之；再叠一层半透明，避免成为生硬的 1px 实线。
+Color roamRimColor(bool dark) => dark
+    ? Colors.white.withValues(alpha: 0.34)
+    : Colors.black.withValues(alpha: 0.16);
+
+/// 性能优先时的「简单模糊」底色：一层够厚的磨砂，背景只透出一点，
+/// 不做任何实时高斯，滚动/弹层都不会额外开图层。
+Color roamFrostedFill(bool dark) => dark
+    ? RoamColors.cardDark.withValues(alpha: 0.86)
+    : Colors.white.withValues(alpha: 0.84);
 
 /// 给可点击元素加一点“按下去会软一下”的反馈。
 class PressableScale extends StatefulWidget {
@@ -143,13 +172,31 @@ class RoamGlassPanel extends StatelessWidget {
             ? Colors.white.withValues(alpha: 0.10)
             : Colors.white.withValues(alpha: 0.86));
 
-    if (!GlassRuntime.material.value || GlassRuntime.performance.value) {
+    final mode = GlassRuntime.mode;
+
+    // 材质关闭：纯色，没有任何模糊与描边。
+    if (mode == RoamGlassMode.off) {
       return ClipRRect(
         borderRadius: borderRadius,
         child: ColoredBox(
           color: isDark ? RoamColors.cardDark : RoamColors.cardLight,
           child: child,
         ),
+      );
+    }
+
+    // 性能优先：简单模糊（磨砂纯色）+ 轮廓光，不开实时高斯图层。
+    if (mode == RoamGlassMode.performance) {
+      return Container(
+        decoration: BoxDecoration(
+          borderRadius: borderRadius,
+          color: tint,
+          border: GlassRuntime.rimLight.value
+              ? Border.all(color: roamRimColor(isDark), width: 1)
+              : null,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: child,
       );
     }
 
@@ -257,12 +304,29 @@ class RoamGlassSurface extends StatelessWidget {
     final isDark =
         forceDark ?? (Theme.of(context).brightness == Brightness.dark);
     final clipRadius = capsule ? 999.0 : radius;
+    final mode = GlassRuntime.mode;
 
-    if (!GlassRuntime.material.value || GlassRuntime.performance.value) {
+    // 材质关闭：纯色卡片。
+    if (mode == RoamGlassMode.off) {
       return Container(
         decoration: BoxDecoration(
           color: isDark ? RoamColors.cardDark : RoamColors.cardLight,
           borderRadius: BorderRadius.circular(clipRadius),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      );
+    }
+
+    // 性能优先：简单模糊（半透明磨砂）+ 轮廓光，不开实时高斯。
+    if (mode == RoamGlassMode.performance) {
+      return Container(
+        decoration: BoxDecoration(
+          color: surfaceColor ?? roamFrostedFill(isDark),
+          borderRadius: BorderRadius.circular(clipRadius),
+          border: GlassRuntime.rimLight.value
+              ? Border.all(color: roamRimColor(isDark), width: 1)
+              : null,
         ),
         clipBehavior: Clip.antiAlias,
         child: child,

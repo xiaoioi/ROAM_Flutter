@@ -55,7 +55,7 @@ class _FontPageState extends State<FontPage> {
       title: '字体',
       child: ListView(
         padding: EdgeInsets.only(
-          top: RoamPageScaffold.contentTopPadding + 10,
+          top: RoamPageScaffold.topPadding(context) + 10,
           bottom: 40,
         ),
         physics: const BouncingScrollPhysics(),

@@ -11,8 +11,10 @@ import '../widgets/roam_segmented.dart';
 
 /// 材质显示效果（对应原版 pages/ModifyMaterialEffect）。
 ///
-/// 四组：边缘渐显 / 滚动条、高斯模糊、轮廓光材质；
-/// 最后一张卡是绿色壁纸上的组合卡片实拍预览，用来直观看出轮廓光。
+/// 显示哪些分区由两个开关决定：
+///  - 「材质显示效果」关闭（标准）→ 只剩边缘渐显/滚动条，玻璃相关全部收起；
+///  - 高斯模糊 = 性能优先 → 收起「玻璃引擎」，玻璃退化成简单模糊 + 轮廓光；
+///  - 都打开 → 高斯模糊 / 玻璃引擎 / 轮廓光材质 三张都在。
 class MaterialEffectsPage extends StatelessWidget {
   const MaterialEffectsPage({super.key, required this.controller});
 
@@ -27,11 +29,14 @@ class MaterialEffectsPage extends StatelessWidget {
         // 强调色统一取主题色（miuix 蓝），不再自带一套红色。
         final accent = Theme.of(context).colorScheme.primary;
         final settings = controller.settings;
+        final materialOn = settings.liquidMaterial;
+        final performance = settings.blurQuality == 'performance';
+
         return RoamPageScaffold(
           title: '材质显示效果',
           child: ListView(
             padding: EdgeInsets.only(
-              top: RoamPageScaffold.contentTopPadding + 6,
+              top: RoamPageScaffold.topPadding(context) + 6,
               bottom: 40,
             ),
             physics: const BouncingScrollPhysics(),
@@ -70,41 +75,14 @@ class MaterialEffectsPage extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(25, 5.2, 25, 5.2),
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                  decoration: BoxDecoration(
-                    color: isDark ? RoamColors.cardDark : RoamColors.cardLight,
-                    borderRadius: BorderRadius.circular(15),
-                  ),
+              if (materialOn) ...[
+                const SizedBox(height: 8),
+                _SectionCard(
+                  icon: 'assets/images/animation.png',
+                  title: '高斯模糊效果',
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Image.asset(
-                            'assets/images/animation.png',
-                            width: 25,
-                            height: 25,
-                            color: isDark
-                                ? RoamColors.textPrimary
-                                : RoamColors.dayInk,
-                          ),
-                          const SizedBox(width: 7),
-                          Text(
-                            '高斯模糊效果',
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: isDark
-                                  ? RoamColors.textPrimary
-                                  : RoamColors.dayInk,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
                       _Segments(
                         value: settings.blurQuality,
                         options: const [
@@ -115,47 +93,36 @@ class MaterialEffectsPage extends StatelessWidget {
                           settings.copyWith(blurQuality: value),
                         ),
                       ),
+                      if (performance) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          '性能优先：玻璃改为简单模糊（半透明磨砂 + 轮廓光），'
+                          '不跑实时高斯，滚动更省电。',
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 1.45,
+                            color:
+                                (isDark
+                                        ? RoamColors.textPrimary
+                                        : RoamColors.dayInk)
+                                    .withValues(alpha: 0.45),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              // 玻璃引擎：自绘 OS4 柔光玻璃（roam_glass.frag，commonSmallRegular）
-              // / flutter_miuix 的 MiuixGlass。默认自绘，可随时切回。
-              Padding(
-                padding: const EdgeInsets.fromLTRB(25, 5.2, 25, 5.2),
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                  decoration: BoxDecoration(
-                    color: isDark ? RoamColors.cardDark : RoamColors.cardLight,
-                    borderRadius: BorderRadius.circular(15),
-                  ),
+              ],
+              // 玻璃引擎只在「效果优先」时才有意义：性能优先一律降级成
+              // 简单模糊，引擎选择不影响渲染，露出来只会让人以为是坏的。
+              if (materialOn && !performance) ...[
+                const SizedBox(height: 8),
+                _SectionCard(
+                  icon: 'assets/images/palette.png',
+                  title: '玻璃引擎',
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Image.asset(
-                            'assets/images/palette.png',
-                            width: 25,
-                            height: 25,
-                            color: isDark
-                                ? RoamColors.textPrimary
-                                : RoamColors.dayInk,
-                          ),
-                          const SizedBox(width: 7),
-                          Text(
-                            '玻璃引擎',
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: isDark
-                                  ? RoamColors.textPrimary
-                                  : RoamColors.dayInk,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
                       _Segments(
                         value: settings.customGlass ? 'roam' : 'miuix',
                         options: const [
@@ -230,41 +197,46 @@ class MaterialEffectsPage extends StatelessWidget {
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(25, 5.2, 25, 5.2),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: isDark ? RoamColors.cardDark : RoamColors.cardLight,
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Column(
-                    children: [
-                      RoamSettingRow(
-                        icon: 'assets/images/palette.png',
-                        label: '轮廓光材质',
-                        showChevron: false,
-                        onTap: () => controller.updateSettings(
-                          settings.copyWith(rimLight: !settings.rimLight),
-                        ),
-                        trailing: RoamSwitch(
-                          value: settings.rimLight,
-                          color: accent,
-                          onChanged: (value) => controller.updateSettings(
-                            settings.copyWith(rimLight: value),
+              ],
+              if (materialOn) ...[
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(25, 5.2, 25, 5.2),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isDark ? RoamColors.cardDark : RoamColors.cardLight,
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      children: [
+                        RoamSettingRow(
+                          icon: 'assets/images/palette.png',
+                          label: '轮廓光材质',
+                          subtitle: performance
+                              ? '玻璃边缘描一圈对比色细边'
+                              : '玻璃边缘的高光描边',
+                          showChevron: false,
+                          onTap: () => controller.updateSettings(
+                            settings.copyWith(rimLight: !settings.rimLight),
+                          ),
+                          trailing: RoamSwitch(
+                            value: settings.rimLight,
+                            color: accent,
+                            onChanged: (value) => controller.updateSettings(
+                              settings.copyWith(rimLight: value),
+                            ),
                           ),
                         ),
-                      ),
-                      const Padding(
-                        padding: EdgeInsets.fromLTRB(12, 2, 12, 0),
-                        child: _MaterialPreview(),
-                      ),
-                    ],
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(12, 2, 12, 0),
+                          child: _MaterialPreview(),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         );
@@ -273,11 +245,62 @@ class MaterialEffectsPage extends StatelessWidget {
   }
 }
 
+/// 设置卡：图标 + 标题一行，下面跟自定义内容（分段器 / 滑块）。
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
+
+  final String icon;
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(25, 5.2, 25, 5.2),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(
+          color: isDark ? RoamColors.cardDark : RoamColors.cardLight,
+          borderRadius: BorderRadius.circular(15),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Image.asset(
+                  icon,
+                  width: 25,
+                  height: 25,
+                  color: isDark ? RoamColors.textPrimary : RoamColors.dayInk,
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: isDark ? RoamColors.textPrimary : RoamColors.dayInk,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// 分段选择器：高斯模糊（性能/效果）、玻璃引擎（自绘 / MIUIX）共用。
 ///
-/// 用 miuix 的 [MiuixGlassSegmentedTabRow]——**相连的分段轨道**：
-/// 一条共用轨道 + 选中指示块连续滑动，和系统「过滤排序」控件一致，
-/// 不再是各段独立胶囊。
+/// 用 miuix 的相连分段轨道（共用轨道 + 滑动指示块），点第几段就落第几段。
 class _Segments extends StatelessWidget {
   const _Segments({
     required this.value,

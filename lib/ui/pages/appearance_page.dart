@@ -32,16 +32,18 @@ class _AppearancePageState extends State<AppearancePage> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final settings = _controller.settings;
+    // settings 必须每次重建时重新读：写在 AnimatedBuilder 外面会被闭包捕获成
+    // 旧值，开关/分段器点了不跟着走（「材质显示效果」旁边的按钮不同步就是这个）。
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, _) {
+        final settings = _controller.settings;
+        final isDark = Theme.of(context).brightness == Brightness.dark;
         return RoamPageScaffold(
           title: '外观与设计',
           child: ListView(
             padding: EdgeInsets.only(
-              top: RoamPageScaffold.contentTopPadding + 4,
+              top: RoamPageScaffold.topPadding(context) + 4,
               bottom: 40,
             ),
             physics: const BouncingScrollPhysics(),

@@ -30,9 +30,18 @@ class RoamPageScaffold extends StatefulWidget {
   /// 悬浮顶栏高度（HyperOS 4 系统应用实测值）。
   static const barHeight = HyperosTopBar.height;
 
-  /// 列表内容推荐的上边距（顶栏高度 + 8dp 呼吸位）。
-  /// body 已从状态栏下方开始，页面只需再让出顶栏这一条。
+  /// 列表内容让出顶栏的最小上边距（顶栏高度 + 8dp 呼吸位）。
+  ///
+  /// 页面内容从 y=0 起铺（边到边，滚动时从状态栏后面穿过），
+  /// 所以实际还要加上状态栏高度，用 [topPadding] 取。
   static const contentTopPadding = barHeight + 8;
+
+  /// 列表内容真正的上边距：状态栏 + 顶栏 + 呼吸位。
+  ///
+  /// 边到边之后 body 不再被 `Padding(top: safeTop)` 顶下来，滚动内容会从
+  /// 状态栏后面穿过并被顶部的渐进模糊糊掉；首屏内容则要自己让出这一段。
+  static double topPadding(BuildContext context) =>
+      MediaQuery.paddingOf(context).top + contentTopPadding;
 
   final String title;
   final Widget child;
@@ -100,13 +109,9 @@ class _RoamPageScaffoldState extends State<RoamPageScaffold> {
           final needCapture = edgeFade || material;
 
           // 底色 + 内容放在同一个捕获子树里：玻璃和渐隐都采样它。
-          Widget page = ColoredBox(
-            color: background,
-            child: Padding(
-              padding: EdgeInsets.only(top: safeTop),
-              child: widget.child,
-            ),
-          );
+          // 内容从 y=0 起铺（边到边）：滚到状态栏后面时被顶部的渐进模糊
+          // 带糊掉，而不是在状态栏下方出现一条硬缝。
+          Widget page = ColoredBox(color: background, child: widget.child);
           if (needCapture) {
             page = MiuixLayerBackdropCapture(
               backdrop: _backdrop,
@@ -123,8 +128,8 @@ class _RoamPageScaffoldState extends State<RoamPageScaffold> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // 内容：从状态栏下方开始铺满；页面用
-                // RoamPageScaffold.contentTopPadding 给顶栏让位。
+                // 内容：从屏幕顶端（含状态栏）铺满；页面用
+                // RoamPageScaffold.topPadding(context) 给顶栏与状态栏让位。
                 Positioned.fill(
                   child: NotificationListener<ScrollNotification>(
                     onNotification: _onScroll,
@@ -150,32 +155,27 @@ class _RoamPageScaffoldState extends State<RoamPageScaffold> {
                 // 顶栏：玻璃 band + 官方 SmallTopAppBar + 玻璃圆钮。
                 // 槽位从 y=0 起算，状态栏这一段也算在带子里——内容滚到
                 // 通知栏后面时同样被渐进模糊磨掉，而不是只糊顶栏那 64dp。
+                // 栏本身放在状态栏下方 64dp 槽位里；模糊带由 HyperosTopBar
+                // 自己向上多铺 statusBarHeight，一直糊到屏幕最顶端。
                 Positioned(
-                  top: 0,
+                  top: safeTop,
                   left: 0,
                   right: 0,
-                  height: safeTop + RoamPageScaffold.barHeight,
-                  child: Column(
-                    children: [
-                      SizedBox(height: safeTop),
-                      SizedBox(
-                        height: RoamPageScaffold.barHeight,
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          child:
-                              widget.topBar ??
-                              HyperosTopBar(
-                                title: widget.title,
-                                actions: widget.actions,
-                                onBack: widget.onBack,
-                                showBack: widget.showBack,
-                                miuixLayer: material ? _backdrop : null,
-                                scrolled: _scrolled,
-                                edgeFade: edgeFade,
-                              ),
+                  height: RoamPageScaffold.barHeight,
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child:
+                        widget.topBar ??
+                        HyperosTopBar(
+                          title: widget.title,
+                          actions: widget.actions,
+                          onBack: widget.onBack,
+                          showBack: widget.showBack,
+                          miuixLayer: material ? _backdrop : null,
+                          scrolled: _scrolled,
+                          edgeFade: edgeFade,
+                          statusBarHeight: safeTop,
                         ),
-                      ),
-                    ],
                   ),
                 ),
                 if (widget.bottom != null)

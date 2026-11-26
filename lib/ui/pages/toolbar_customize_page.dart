@@ -99,7 +99,7 @@ class _ToolbarCustomizePageState extends State<ToolbarCustomizePage> {
       child: ListView(
         padding: EdgeInsets.fromLTRB(
           25,
-          RoamPageScaffold.contentTopPadding + 10,
+          RoamPageScaffold.topPadding(context) + 10,
           25,
           24,
         ),

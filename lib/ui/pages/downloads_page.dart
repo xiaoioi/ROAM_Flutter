@@ -54,7 +54,7 @@ class DownloadsPage extends StatelessWidget {
             children: [
               ListView(
                 padding: EdgeInsets.only(
-                  top: RoamPageScaffold.contentTopPadding + 2,
+                  top: RoamPageScaffold.topPadding(context) + 2,
                   bottom: 110,
                 ),
                 physics: const BouncingScrollPhysics(),

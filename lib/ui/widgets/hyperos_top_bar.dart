@@ -56,6 +56,7 @@ class HyperosTopBar extends StatelessWidget {
     this.scrolled = true,
     this.edgeFade = true,
     this.glass = true,
+    this.statusBarHeight = 0,
   });
 
   /// 槽位高度（保持页面原有节奏；栏本身是官方的 50dp 居中）。
@@ -87,6 +88,10 @@ class HyperosTopBar extends StatelessWidget {
   /// 是否启用顶部的 progressive blur 带。
   final bool edgeFade;
 
+  /// 状态栏高度：模糊带要一直铺到屏幕最顶端（y=0），
+  /// 而不是只盖住 64dp 的栏——否则状态栏那一段会出现一条硬缝。
+  final double statusBarHeight;
+
   /// 材质总开关。关掉时圆钮只剩图标（不出现玻璃底与描边）。
   final bool glass;
 
@@ -96,9 +101,13 @@ class HyperosTopBar extends StatelessWidget {
         MiuixTheme.of(context).colors.background.computeLuminance() < .5;
     final fg = MiuixTheme.of(context).colors.onSurface;
     final animate = !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+    final mode = GlassRuntime.mode;
+    // 只有标准模式才跑顶部的渐进模糊带；性能优先不糊，材质关闭更不糊。
     final showBand =
-        edgeFade && miuixLayer != null && GlassRuntime.material.value;
-    final enabled = glass && GlassRuntime.material.value;
+        edgeFade && miuixLayer != null && mode == RoamGlassMode.standard;
+    final enabled = glass && mode != RoamGlassMode.off;
+    // 性能优先：圆钮改成「简单模糊」——不采样、不做高斯，只铺半透明磨砂底。
+    final frosted = mode == RoamGlassMode.performance;
     final radius = MiuixGlassTopAppBarDefaults.rampDistance;
 
     return TweenAnimationBuilder<double>(
@@ -109,9 +118,9 @@ class HyperosTopBar extends StatelessWidget {
       builder: (context, rawProgress, _) {
         final progress = enabled ? rawProgress : 0.0;
         return GlassBarScope(
-          // 按钮与 band 都采样同一份页面快照。
-          backdrop: miuixLayer,
-          buttonBackdrop: miuixLayer,
+          // 按钮与 band 都采样同一份页面快照；性能优先时不采样。
+          backdrop: frosted ? null : miuixLayer,
+          buttonBackdrop: frosted ? null : miuixLayer,
           material: MiuixGlassTopAppBarDefaults.nestedMaterial(dark),
           underlay: null,
           buttonUnderlay: null,
@@ -122,57 +131,43 @@ class HyperosTopBar extends StatelessWidget {
           floating: progress > .001,
           ramp: radius == 0 ? 1 : progress,
           buttonSize: circleSize,
-          showStroke: true,
+          // 磨砂底由 fill 承担；高光描边在性能优先时换成按明暗取色的轮廓光。
+          fill: frosted ? roamFrostedFill(dark) : null,
+          showStroke: !frosted,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
               // 顶部渐进模糊带：官方的 80dp 半径 + 下缘消融遮罩，
               // 高度按「栏高 + bandOverhang」向上多探一点，与库一致。
               if (showBand)
-                Positioned.fill(
+                Positioned(
+                  top: -statusBarHeight,
+                  left: 0,
+                  right: 0,
                   bottom: -MiuixGlassTopAppBarDefaults.bandOverhang,
                   child: IgnorePointer(
                     child: Opacity(
                       opacity: progress,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          ShaderMask(
-                            blendMode: BlendMode.dstIn,
-                            shaderCallback:
-                                MiuixGlassTopAppBarDefaults.bandBlurMask()
-                                    .createShader,
-                            child: MiuixGlassPanel(
-                              backdrop: miuixLayer,
-                              material: MiuixGlassTopAppBarDefaults.bandMaterial(
-                                dark,
-                                MiuixGlassTopAppBarDefaults
-                                    .progressiveBlurRadius,
-                              ),
-                              shape: const MiuixGlassShape(cornerRadius: 0),
-                              stroke: null,
-                              shadow: null,
-                              shading: false,
-                              child: const SizedBox.expand(),
-                            ),
+                      // 只有官方这一层渐进模糊：下缘用 bandBlurMask 消融。
+                      // 以前这里还叠了一条 surface 半透明渐变当「压暗遮罩」，
+                      // 那会让状态栏那一块发灰，和 miuix 的渐隐不是一回事。
+                      child: ShaderMask(
+                        blendMode: BlendMode.dstIn,
+                        shaderCallback:
+                            MiuixGlassTopAppBarDefaults.bandBlurMask()
+                                .createShader,
+                        child: MiuixGlassPanel(
+                          backdrop: miuixLayer,
+                          material: MiuixGlassTopAppBarDefaults.bandMaterial(
+                            dark,
+                            MiuixGlassTopAppBarDefaults.progressiveBlurRadius,
                           ),
-                          DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  MiuixTheme.of(
-                                    context,
-                                  ).colors.surface.withValues(alpha: .3),
-                                  MiuixTheme.of(
-                                    context,
-                                  ).colors.surface.withValues(alpha: 0),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+                          shape: const MiuixGlassShape(cornerRadius: 0),
+                          stroke: null,
+                          shadow: null,
+                          shading: false,
+                          child: const SizedBox.expand(),
+                        ),
                       ),
                     ),
                   ),
@@ -260,7 +255,7 @@ class HyperosCircleButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final label = (tooltip?.isNotEmpty ?? false) ? tooltip : null;
-    return MiuixGlassIconButton(
+    final button = MiuixGlassIconButton(
       onPressed: onTap == null
           ? null
           : () {
@@ -273,6 +268,40 @@ class HyperosCircleButton extends StatelessWidget {
       tooltip: label,
       semanticLabel: label,
       child: child,
+    );
+
+    // 性能优先：没有高光 shader，轮廓光改成「按明暗取色的 1px 细边」，
+    // 和 miuix 的浮起进度同步淡入（内容在顶部时仍然只有图标）。
+    final scope = GlassBarScope.maybeOf(context);
+    final progress = (scope?.progress ?? 1).clamp(0.0, 1.0);
+    final rim =
+        GlassRuntime.mode == RoamGlassMode.performance &&
+        GlassRuntime.rimLight.value &&
+        progress > .01;
+    if (!rim) return button;
+    final dark =
+        MiuixTheme.of(context).colors.background.computeLuminance() < .5;
+    return SizedBox.square(
+      dimension: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          button,
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: progress,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: roamRimColor(dark)),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

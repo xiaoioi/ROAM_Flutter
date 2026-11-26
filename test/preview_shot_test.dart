@@ -63,8 +63,8 @@ class _DemoPageState extends State<_DemoPage> {
         HyperosBarAction(asset: 'assets/images/menu.png', onTap: () {}),
       ],
       child: ListView(
-        padding: const EdgeInsets.only(
-          top: RoamPageScaffold.contentTopPadding + 4,
+        padding: EdgeInsets.only(
+          top: RoamPageScaffold.topPadding(context) + 4,
           bottom: 40,
         ),
         physics: const BouncingScrollPhysics(),
@@ -148,7 +148,8 @@ void main() {
     await _save(tester, 'new-01-page-top');
 
     // 滚动一段 → 顶栏浮起（圆钮玻璃 + 描边 + 模糊带）
-    await tester.drag(find.byType(ListView), const Offset(0, -420));
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(milliseconds: 60));
     await tester.pump(const Duration(milliseconds: 500));
     await _save(tester, 'new-02-page-scrolled');

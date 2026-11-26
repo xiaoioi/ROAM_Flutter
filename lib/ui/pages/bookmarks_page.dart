@@ -87,7 +87,7 @@ class BookmarksPage extends StatelessWidget {
             children: [
               ListView(
                 padding: EdgeInsets.only(
-                  top: RoamPageScaffold.contentTopPadding + 6,
+                  top: RoamPageScaffold.topPadding(context) + 6,
                   bottom: 120,
                 ),
                 physics: const BouncingScrollPhysics(),

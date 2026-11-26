@@ -32,7 +32,7 @@ class AiSettingsPage extends StatelessWidget {
           title: 'AI 设置',
           child: ListView(
             padding: EdgeInsets.only(
-              top: RoamPageScaffold.contentTopPadding + 4,
+              top: RoamPageScaffold.topPadding(context) + 4,
               bottom: 50 + MediaQuery.paddingOf(context).bottom,
             ),
             physics: const BouncingScrollPhysics(),

@@ -103,8 +103,8 @@ class _SettingsPageState extends State<SettingsPage> {
         // 背景捕获已由 RoamPageScaffold 统一提供（底色 + 内容一起采样），
         // 这里再录一份只会让每帧多一次 toImage。
         child: ListView(
-          padding: const EdgeInsets.only(
-            top: RoamPageScaffold.contentTopPadding,
+          padding: EdgeInsets.only(
+            top: RoamPageScaffold.topPadding(context),
             bottom: 16,
           ),
           physics: const BouncingScrollPhysics(),

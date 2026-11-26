@@ -34,7 +34,7 @@ class SiteBehaviorPage extends StatelessWidget {
           title: '网站行为管控',
           child: ListView(
             padding: EdgeInsets.only(
-              top: RoamPageScaffold.contentTopPadding + 2,
+              top: RoamPageScaffold.topPadding(context) + 2,
               bottom: 40,
             ),
             physics: const BouncingScrollPhysics(),
