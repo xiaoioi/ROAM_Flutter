@@ -55,6 +55,7 @@ class HyperosTopBar extends StatelessWidget {
     this.miuixLayer,
     this.scrolled = true,
     this.edgeFade = true,
+    this.glass = true,
   });
 
   /// 槽位高度（保持页面原有节奏；栏本身是官方的 50dp 居中）。
@@ -86,6 +87,9 @@ class HyperosTopBar extends StatelessWidget {
   /// 是否启用顶部的 progressive blur 带。
   final bool edgeFade;
 
+  /// 材质总开关。关掉时圆钮只剩图标（不出现玻璃底与描边）。
+  final bool glass;
+
   @override
   Widget build(BuildContext context) {
     final dark =
@@ -94,6 +98,7 @@ class HyperosTopBar extends StatelessWidget {
     final animate = !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
     final showBand =
         edgeFade && miuixLayer != null && GlassRuntime.material.value;
+    final enabled = glass && GlassRuntime.material.value;
     final radius = MiuixGlassTopAppBarDefaults.rampDistance;
 
     return TweenAnimationBuilder<double>(
@@ -101,7 +106,8 @@ class HyperosTopBar extends StatelessWidget {
           ? MiuixGlassMotion.topBarButtonFloat
           : Duration.zero,
       tween: Tween(begin: scrolled ? 1 : 0, end: scrolled ? 1 : 0),
-      builder: (context, progress, _) {
+      builder: (context, rawProgress, _) {
+        final progress = enabled ? rawProgress : 0.0;
         return GlassBarScope(
           // 按钮与 band 都采样同一份页面快照。
           backdrop: miuixLayer,
