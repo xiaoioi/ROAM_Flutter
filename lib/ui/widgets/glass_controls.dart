@@ -86,6 +86,63 @@ Color roamFrostedFill(bool dark) => dark
     ? RoamColors.cardDark.withValues(alpha: 0.86)
     : Colors.white.withValues(alpha: 0.84);
 
+/// 纯渐进模糊带：只糊，不改色。
+///
+/// 之前顶栏/底边用的是 miuix 的 `bandMaterial`，它等于「高斯模糊 + 三层混色」，
+/// 深色那套是 `#565656`(luminosity) + `#3F3F3F`(overlay)、浅色那套是
+/// `#FFFFFF`(softLight) + `#FFFFFF`(hardLight)。这层色调在深色页面上就是一条
+/// 明显发灰的带子——看起来正是「渐隐上盖了一层灰遮罩」。
+///
+/// 边缘渐隐的本意是让内容在边界处糊掉，不该顺带改色，所以这里只保留
+/// 实时高斯本身，淡出仍用官方的 `bandBlurMask()`（上缘实、下缘消融）。
+class RoamProgressiveBlur extends StatelessWidget {
+  const RoamProgressiveBlur({
+    super.key,
+    this.sigma = 32,
+    this.fromTop = true,
+    this.strength = 1,
+  });
+
+  /// 高斯半径（dp）。miuix 的 `progressiveBlurRadius` 是半径不是 sigma，
+  /// 80 半径约等于 sigma 32 的观感，但后者便宜得多。
+  final double sigma;
+
+  /// true：上糊下清；false：下糊上清。
+  final bool fromTop;
+
+  /// 整体强度，0 完全隐藏。
+  final double strength;
+
+  @override
+  Widget build(BuildContext context) {
+    if (sigma <= 0 || strength <= 0) return const SizedBox.shrink();
+    final mask = fromTop
+        ? MiuixGlassTopAppBarDefaults.bandBlurMask()
+        : const LinearGradient(
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+            stops: [0, .55, 1],
+            colors: [Color(0xFFFFFFFF), Color(0xFFFFFFFF), Color(0x00FFFFFF)],
+          );
+    return Opacity(
+      opacity: strength.clamp(0.0, 1.0),
+      // 先糊背景，再用渐变把模糊本身擦掉——不叠任何颜色。
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (bounds) => mask.createShader(bounds),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(
+            sigmaX: sigma,
+            sigmaY: sigma,
+            tileMode: TileMode.clamp,
+          ),
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+  }
+}
+
 /// 给可点击元素加一点“按下去会软一下”的反馈。
 class PressableScale extends StatefulWidget {
   const PressableScale({

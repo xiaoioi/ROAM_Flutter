@@ -31,7 +31,7 @@ class GlassSearchEntry {
 /// 还原的结构（见 compose-miuix `GlassSearchOverlay.kt`）：
 ///
 ///  - 顶部一条 **progressive blur** 过渡带，高度盖住状态栏 + 搜索行；
-///    模糊仍然走 miuix 的 `bandMaterial` + `bandBlurMask`，与顶栏同一套；
+///    模糊和顶栏用同一条纯模糊带（`RoamProgressiveBlur` + `bandBlurMask`）；
 ///  - 胶囊形玻璃搜索框（`popupViewGlass` 材质 + `small` 描边 + `floating` 投影），
 ///    前置放大镜、输入非空时给清除钮；
 ///  - 右侧「取消」圆钮（[MiuixGlassIconButton]），点它或按返回收起；
@@ -141,10 +141,7 @@ class _RoamGlassSearchOverlayState extends State<RoamGlassSearchOverlay>
               child: IgnorePointer(
                 child: Opacity(
                   opacity: t,
-                  child: _ProgressiveBlurBand(
-                    backdrop: widget.backdrop,
-                    isDark: isDark,
-                  ),
+                  child: _ProgressiveBlurBand(isDark: isDark),
                 ),
               ),
             ),
@@ -380,53 +377,20 @@ class _RoamGlassSearchOverlayState extends State<RoamGlassSearchOverlay>
   }
 }
 
-/// 顶部渐进模糊带：miuix 的 `bandMaterial` + `bandBlurMask`。
+/// 顶部渐进模糊带：纯模糊 + `bandBlurMask` 消融，不叠任何色调。
 class _ProgressiveBlurBand extends StatelessWidget {
-  const _ProgressiveBlurBand({
-    required this.backdrop,
-    required this.isDark,
-  });
+  const _ProgressiveBlurBand({required this.isDark});
 
-  final MiuixBackdrop backdrop;
   final bool isDark;
 
   @override
   Widget build(BuildContext context) {
-    final surface = MiuixTheme.of(context).colors.surface;
-    return ShaderMask(
-      blendMode: BlendMode.dstIn,
-      shaderCallback: (bounds) =>
-          MiuixGlassTopAppBarDefaults.bandBlurMask().createShader(bounds),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (GlassRuntime.material.value && !GlassRuntime.performance.value)
-            MiuixGlassPanel(
-              backdrop: backdrop,
-              material: MiuixGlassTopAppBarDefaults.bandMaterial(
-                isDark,
-                MiuixGlassTopAppBarDefaults.progressiveBlurRadius,
-              ),
-              shape: const MiuixGlassShape(cornerRadius: 0),
-              stroke: null,
-              shadow: null,
-              shading: false,
-              child: const SizedBox.expand(),
-            ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  surface.withValues(alpha: 0.32),
-                  surface.withValues(alpha: 0),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    // 只有模糊，没有色调：原来那层 surface 32%→0 的渐变就是「灰遮罩」，
+    // bandMaterial 深色版又自带 #565656/#3F3F3F 的灰调，一起去掉。
+    if (!GlassRuntime.material.value ||
+        GlassRuntime.performance.value) {
+      return const SizedBox.shrink();
+    }
+    return const RoamProgressiveBlur(sigma: 32);
   }
 }

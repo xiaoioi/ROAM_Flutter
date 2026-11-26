@@ -42,9 +42,9 @@ class HyperosBarAction {
 ///     内容滚过一段距离后 progress→1，玻璃底和描边才淡入。
 ///     这对应 `MiuixGlassTopAppBar` 的 `isContentScrolled` 语义。
 ///
-/// 顶部的渐进模糊带（band）也照搬 `MiuixGlassTopAppBar`：同一份
-/// [MiuixGlassTopAppBarDefaults.bandMaterial] 与 `bandBlurMask()`，
-/// 不再自造「翻过来的遮罩」。
+/// 顶部的渐进模糊带（band）只做模糊、不叠色调：miuix 的 `bandMaterial`
+/// 自带三层灰调（深色 #565656 + #3F3F3F），铺在深色页面上就是一条灰遮罩。
+/// 淡出仍用官方的 `bandBlurMask()`，所以下缘依旧是连续消融的。
 class HyperosTopBar extends StatelessWidget {
   const HyperosTopBar({
     super.key,
@@ -148,27 +148,10 @@ class HyperosTopBar extends StatelessWidget {
                   child: IgnorePointer(
                     child: Opacity(
                       opacity: progress,
-                      // 只有官方这一层渐进模糊：下缘用 bandBlurMask 消融。
-                      // 以前这里还叠了一条 surface 半透明渐变当「压暗遮罩」，
-                      // 那会让状态栏那一块发灰，和 miuix 的渐隐不是一回事。
-                      child: ShaderMask(
-                        blendMode: BlendMode.dstIn,
-                        shaderCallback:
-                            MiuixGlassTopAppBarDefaults.bandBlurMask()
-                                .createShader,
-                        child: MiuixGlassPanel(
-                          backdrop: miuixLayer,
-                          material: MiuixGlassTopAppBarDefaults.bandMaterial(
-                            dark,
-                            MiuixGlassTopAppBarDefaults.progressiveBlurRadius,
-                          ),
-                          shape: const MiuixGlassShape(cornerRadius: 0),
-                          stroke: null,
-                          shadow: null,
-                          shading: false,
-                          child: const SizedBox.expand(),
-                        ),
-                      ),
+                      // 只糊不改色：miuix 的 bandMaterial 自带三层灰调
+                      // （深色 #565656 + #3F3F3F），在深色页面上就是一条
+                      // 灰遮罩；渐隐本来就只该让内容糊掉，不能顺带压暗。
+                      child: const RoamProgressiveBlur(sigma: 32),
                     ),
                   ),
                 ),

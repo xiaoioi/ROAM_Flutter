@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_miuix/miuix.dart';
 
 import '../../theme/roam_theme.dart';
+import '../widgets/glass_controls.dart';
 import '../widgets/hyperos_top_bar.dart';
 import '../widgets/roam_sheet.dart';
 
@@ -395,7 +396,6 @@ class _AboutTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final top = MediaQuery.paddingOf(context).top;
     final fg = isDark ? RoamColors.textPrimary : RoamColors.dayInk;
-    final surface = isDark ? Colors.black : RoamColors.daySky;
 
     return Positioned(
       top: 0,
@@ -408,10 +408,13 @@ class _AboutTopBar extends StatelessWidget {
           final titleAlpha = ((p - 0.62) / 0.3).clamp(0.0, 1.0);
           return Stack(
             children: [
+              // 滚动到一定程度后才出现的顶部渐隐：和二级页用同一条纯模糊带，
+              // 不再铺 92% 的实色底（那在浅色下就是一层灰白遮罩）。
               Positioned.fill(
                 child: IgnorePointer(
-                  child: ColoredBox(
-                    color: surface.withValues(alpha: 0.92 * barAlpha),
+                  child: Opacity(
+                    opacity: barAlpha,
+                    child: const RoamProgressiveBlur(sigma: 32),
                   ),
                 ),
               ),
