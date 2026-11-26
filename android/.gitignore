@@ -1,8 +1,6 @@
-gradle-wrapper.jar
+# Gradle wrapper 必须入库，否则 CI 全新检出无法执行 flutter build apk。
 /.gradle
 /captures/
-/gradlew
-/gradlew.bat
 /local.properties
 GeneratedPluginRegistrant.java
 .cxx/

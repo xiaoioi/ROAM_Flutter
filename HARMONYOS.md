@@ -1,5 +1,7 @@
 # 星环 Roam · HarmonyOS NEXT 适配说明
 
+> 自动构建（GitCode Actions，同时产出 APK 与未签名 HAP）见仓库根目录 `CI.md`。
+
 本目录已经包含一个可构建的鸿蒙工程 `ohos/`，构建产物在
 `ohos/entry/build/default/outputs/default/entry-default-unsigned.hap`。
 

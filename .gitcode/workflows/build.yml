@@ -1,0 +1,64 @@
+name: 星环 Roam · 自动构建 APK / HAP
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: 构建 Android APK + HarmonyOS HAP
+    runs-on: [ubuntu-latest, x64, large]
+    timeout-minutes: 120
+
+    steps:
+      - name: 检出源码
+        uses: checkout
+
+      - name: 设置 JDK 17
+        uses: setup-java
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 缓存 Flutter / Android SDK / DevEco 工具链与依赖
+        uses: cache
+        with:
+          path: |
+            ~/.cache/roam-ci
+            ~/.pub-cache
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: roam-build-v1-${{ hashFiles('pubspec.yaml', 'pubspec.lock', '.gitcode/workflows/build.yml', 'tool/ci_build.sh') }}
+          restore-keys: |
+            roam-build-v1-
+
+      - name: 构建 Android APK（arm64 / arm32）
+        shell: bash
+        run: bash tool/ci_build.sh android
+
+      - name: 上传 Android APK
+        uses: upload-artifact
+        with:
+          name: roam-apk
+          path: |
+            dist/*.apk
+            **/dist/*.apk
+
+      - name: 构建 HarmonyOS NEXT HAP（未签名）
+        shell: bash
+        run: bash tool/ci_build.sh hap
+
+      - name: 上传 HarmonyOS HAP
+        uses: upload-artifact
+        with:
+          name: roam-hap-unsigned
+          path: |
+            dist/*.hap
+            **/dist/*.hap
