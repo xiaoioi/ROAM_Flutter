@@ -199,7 +199,8 @@ class _RoamAppState extends State<RoamApp> {
                         Positioned(
                           left: 0,
                           right: 0,
-                          bottom: 58,
+                          // 底栏 50dp + 手势条安全区，再留 8dp 呼吸；提示不压工具栏。
+                          bottom: 58 + MediaQuery.paddingOf(context).bottom,
                           child: MiuixSnackbarHost(
                             state: roamSnackbarHost,
                             blurSigma: 28,
