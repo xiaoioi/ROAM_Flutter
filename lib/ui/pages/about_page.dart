@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -9,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_miuix/miuix.dart';
 
 import '../../theme/roam_theme.dart';
+import '../widgets/hyperos_top_bar.dart';
 import '../widgets/roam_sheet.dart';
 
 /// 关于页。
@@ -23,7 +25,7 @@ class AboutPage extends StatefulWidget {
 
   /// 与 `pubspec.yaml` 的 version 保持同步。
   static const versionName = '1.0.31';
-  static const versionCode = 138;
+  static const versionCode = 139;
 
   static const _releaseLabel = '100.3Beta4';
 
@@ -93,17 +95,12 @@ class _AboutPageState extends State<AboutPage> {
       backgroundColor: isDark ? const Color(0xFF07060F) : const Color(0xFFF7F5FC),
       body: Stack(
         children: [
-          // 背景：静态光晕，录一次快照给玻璃采样。
+          // 背景：OS3 前景模糊流动色光，卡片玻璃采样它。
           Positioned.fill(
             child: MiuixLayerBackdropCapture(
               backdrop: _backdrop,
               pixelRatio: 1,
-              child: RepaintBoundary(
-                child: CustomPaint(
-                  painter: _AuraPainter(isDark: isDark),
-                  size: Size.infinite,
-                ),
-              ),
+              child: _FlowBackground(isDark: isDark),
             ),
           ),
           // 内容：上边距留出 hero 那一块，滚动时从 hero 底下穿过去。
@@ -222,7 +219,12 @@ class _AboutPageState extends State<AboutPage> {
               version: 'v${AboutPage.versionName} (${AboutPage.versionCode})',
             ),
           ),
-          _AboutTopBar(progress: _progress, isDark: isDark, title: '关于'),
+          _AboutTopBar(
+            progress: _progress,
+            isDark: isDark,
+            title: '关于',
+            backdrop: _backdrop,
+          ),
         ],
       ),
     );
@@ -379,11 +381,15 @@ class _AboutTopBar extends StatelessWidget {
     required this.progress,
     required this.isDark,
     required this.title,
+    required this.backdrop,
   });
 
   final ValueListenable<double> progress;
   final bool isDark;
   final String title;
+
+  /// 背景采样源：返回圆钮是玻璃，采样同一份背景快照。
+  final MiuixLayerBackdrop backdrop;
 
   @override
   Widget build(BuildContext context) {
@@ -433,24 +439,20 @@ class _AboutTopBar extends StatelessWidget {
                         ),
                       ),
                       Positioned(
-                        left: 6,
+                        left: 24,
                         top: 0,
                         bottom: 0,
                         child: Center(
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
+                          // 顶栏圆钮统一用 miuix 的 GlassIconButton。
+                          child: HyperosCircleButton(
+                            size: 40,
+                            miuixLayer: backdrop,
                             onTap: () => Navigator.of(context).maybePop(),
-                            child: SizedBox(
-                              width: 44,
-                              height: 44,
-                              child: Center(
-                                child: Image.asset(
-                                  'assets/images/back_images.png',
-                                  width: 28,
-                                  height: 28,
-                                  color: fg,
-                                ),
-                              ),
+                            child: Image.asset(
+                              'assets/images/back_images.png',
+                              width: 26,
+                              height: 26,
+                              color: fg,
                             ),
                           ),
                         ),
@@ -643,106 +645,136 @@ class _AboutRow extends StatelessWidget {
   }
 }
 
-/// 彩色光晕背景：深色是紫罗兰 + 靛蓝 + 青，浅色是薰衣草 + 天蓝。
+/// OS3 风格「前景模糊」流动背景。
 ///
-/// 纯静态绘制（渐变 + 径向光斑），外面套了 RepaintBoundary 与背景捕获，
-/// 滚动时不重绘，玻璃卡片采样它做折射。
-class _AuraPainter extends CustomPainter {
-  const _AuraPainter({required this.isDark});
+/// 对齐 miuix 示例的 `BgEffectPainter(isOs3 = true)`：底色 + 3~4 团色光，
+/// 色光随时间在屏幕里缓慢漂移（`colorStage` 弹簧换色 + 点位动画），
+/// 每一团都用 [MaskFilter.blur] 做成大面积柔焦——也就是 OS3 那层
+/// 「前景模糊」：颜色是糊开的、没有边界，只有亮暗在流动。
+///
+/// 帧率刻意压到 10fps：这层在 `MiuixLayerBackdropCapture` 里，卡片玻璃
+/// 采样它，60fps 会让 7 块玻璃每秒重画 60 次。色光是分钟级的慢动作，
+/// 10fps 肉眼完全看不出台阶，却省掉 5/6 的玻璃重采样。
+class _FlowBackground extends StatefulWidget {
+  const _FlowBackground({required this.isDark});
 
   final bool isDark;
 
   @override
+  State<_FlowBackground> createState() => _FlowBackgroundState();
+}
+
+class _FlowBackgroundState extends State<_FlowBackground> {
+  /// 0~1 循环的相位，painter 通过 `repaint` 直接监听，不重建 widget。
+  final ValueNotifier<double> _phase = ValueNotifier(0);
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      _phase.value = (_phase.value + 1 / 900) % 1; // 90s 一圈
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _phase.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: CustomPaint(
+        painter: _FlowPainter(isDark: widget.isDark, phase: _phase),
+        size: Size.infinite,
+      ),
+    );
+  }
+}
+
+class _FlowPainter extends CustomPainter {
+  _FlowPainter({required this.isDark, required this.phase})
+    : super(repaint: phase);
+
+  final bool isDark;
+  final ValueNotifier<double> phase;
+
+  /// OS3 预设：深色是深海蓝底 + 蓝/靛/紫三团光；浅色是冷白底 + 天蓝/薰衣草。
+  static const _darkBase = [
+    Color(0xFF05070F),
+    Color(0xFF0A1024),
+    Color(0xFF04060C),
+  ];
+  static const _lightBase = [
+    Color(0xFFF8FAFF),
+    Color(0xFFEEF3FF),
+    Color(0xFFFBF9FF),
+  ];
+
+  /// (色光, 半径系数, 基准 x, 基准 y)
+  static const _darkBlobs = <(Color, double, double, double)>[
+    (Color(0xFF2B5BFF), 0.62, 0.52, 0.16),
+    (Color(0xFF6A3BE0), 0.46, 0.90, 0.26),
+    (Color(0xFF1B3FA8), 0.38, 0.70, 0.62),
+    (Color(0xFF8A5CFF), 0.30, 0.10, 0.82),
+  ];
+
+  @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
+    final w = size.width;
+    final h = size.height;
+    final t = phase.value * math.pi * 2;
+
     canvas.drawRect(
       rect,
       Paint()
         ..shader = ui.Gradient.linear(
           rect.topCenter,
           rect.bottomCenter,
-          isDark
-              ? const [
-                  Color(0xFF0B0818),
-                  Color(0xFF120C26),
-                  Color(0xFF08060F),
-                ]
-              : const [
-                  Color(0xFFF8F5FF),
-                  Color(0xFFEFF3FF),
-                  Color(0xFFFBF8FF),
-                ],
+          isDark ? _darkBase : _lightBase,
           const [0, 0.55, 1],
         ),
     );
 
-    final w = size.width;
-    final h = size.height;
-    void blob(Offset center, double radius, Color color) {
+    // 前景模糊：每团色光用 MaskFilter 做高斯柔焦，边界完全化开。
+    void blob(double cx, double cy, double radius, Color color, double alpha) {
       canvas.drawCircle(
-        center,
+        Offset(cx, cy),
         radius,
         Paint()
-          ..shader = ui.Gradient.radial(
-            center,
-            radius,
-            [color, color.withValues(alpha: 0)],
-          ),
+          ..color = color.withValues(alpha: alpha)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, radius * 0.55),
       );
     }
 
     if (isDark) {
-      blob(
-        Offset(w * 0.16, h * 0.14),
-        w * 0.95,
-        const Color(0xFF6B3FE0).withValues(alpha: 0.55),
-      );
-      blob(
-        Offset(w * 0.92, h * 0.24),
-        w * 0.8,
-        const Color(0xFF1E62FF).withValues(alpha: 0.40),
-      );
-      blob(
-        Offset(w * 0.72, h * 0.60),
-        w * 0.9,
-        const Color(0xFF7B2BD6).withValues(alpha: 0.30),
-      );
-      blob(
-        Offset(w * 0.08, h * 0.78),
-        w * 0.85,
-        const Color(0xFF0E7C86).withValues(alpha: 0.26),
-      );
-      blob(
-        Offset(w * 0.5, h * 0.98),
-        w * 0.9,
-        const Color(0xFF2B3AA8).withValues(alpha: 0.32),
-      );
+      for (var i = 0; i < _darkBlobs.length; i++) {
+        final (color, radius, bx, by) = _darkBlobs[i];
+        final drift = t + i * 1.7;
+        blob(
+          w * (bx + 0.05 * math.sin(drift)),
+          h * (by + 0.035 * math.cos(drift * 0.8)),
+          w * radius,
+          color,
+          0.30 + 0.10 * math.sin(drift * 1.3),
+        );
+      }
     } else {
-      blob(
-        Offset(w * 0.14, h * 0.12),
-        w * 0.95,
-        const Color(0xFFC9B6FF).withValues(alpha: 0.62),
-      );
-      blob(
-        Offset(w * 0.95, h * 0.22),
-        w * 0.8,
-        const Color(0xFFA9C8FF).withValues(alpha: 0.55),
-      );
-      blob(
-        Offset(w * 0.78, h * 0.58),
-        w * 0.9,
-        const Color(0xFFD9B8FF).withValues(alpha: 0.40),
-      );
-      blob(
-        Offset(w * 0.06, h * 0.76),
-        w * 0.85,
-        const Color(0xFFB2EDE4).withValues(alpha: 0.38),
-      );
-      blob(
-        Offset(w * 0.5, h * 0.98),
-        w * 0.9,
-        const Color(0xFFBFD4FF).withValues(alpha: 0.45),
-      );
+      blob(w * (0.16 + 0.05 * math.sin(t)), h * (0.14 + 0.03 * math.cos(t)),
+          w * 0.95, const Color(0xFFB7D2FF), 0.62);
+      blob(w * (0.92 + 0.04 * math.cos(t + 1.2)),
+          h * (0.24 + 0.04 * math.sin(t + 1.2)), w * 0.8,
+          const Color(0xFFCBD9FF), 0.55);
+      blob(w * (0.74 + 0.05 * math.sin(t + 2.4)),
+          h * (0.58 + 0.04 * math.cos(t + 2.4)), w * 0.9,
+          const Color(0xFFD9CCFF), 0.42);
+      blob(w * (0.10 + 0.04 * math.cos(t + 3.6)),
+          h * (0.80 + 0.03 * math.sin(t + 3.6)), w * 0.85,
+          const Color(0xFFBFD4FF), 0.45);
     }
 
     // 顶部压暗 / 提亮，让状态栏与顶栏图标有对比。
@@ -757,20 +789,9 @@ class _AuraPainter extends CustomPainter {
               : [Colors.white.withValues(alpha: 0.30), Colors.transparent],
         ),
     );
-
-    // 轻微颗粒，避免大面积渐变出现色带。
-    final grain = Paint()
-      ..color = (isDark ? Colors.white : Colors.black).withValues(alpha: 0.02);
-    final random = math.Random(20261126);
-    for (var i = 0; i < 320; i++) {
-      canvas.drawCircle(
-        Offset(random.nextDouble() * w, random.nextDouble() * h),
-        0.9,
-        grain,
-      );
-    }
   }
 
   @override
-  bool shouldRepaint(covariant _AuraPainter old) => old.isDark != isDark;
+  bool shouldRepaint(covariant _FlowPainter old) =>
+      old.isDark != isDark || old.phase != phase;
 }

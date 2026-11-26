@@ -79,7 +79,6 @@ class BrowserSettings {
     this.glassOpacity = 1.0,
     this.blurBackground = true,
     this.hdrDisplay = false,
-    this.topBarGlass = false,
     this.allowAppRedirect = true,
     this.systemAppOnlyRedirect = false,
     this.allowLocation = true,
@@ -224,7 +223,6 @@ class BrowserSettings {
   final bool hdrDisplay;
 
   /// 顶栏圆钮是否走真实背景采样玻璃（false = 澎湃 4 实心圆钮）。
-  final bool topBarGlass;
 
   // ---- 网站行为管控（pages/BehaviorControl）----
 
@@ -311,7 +309,6 @@ class BrowserSettings {
     double? glassOpacity,
     bool? blurBackground,
     bool? hdrDisplay,
-    bool? topBarGlass,
     bool? allowAppRedirect,
     bool? systemAppOnlyRedirect,
     bool? allowLocation,
@@ -375,7 +372,6 @@ class BrowserSettings {
       glassOpacity: glassOpacity ?? this.glassOpacity,
       blurBackground: blurBackground ?? this.blurBackground,
       hdrDisplay: hdrDisplay ?? this.hdrDisplay,
-      topBarGlass: topBarGlass ?? this.topBarGlass,
       allowAppRedirect: allowAppRedirect ?? this.allowAppRedirect,
       systemAppOnlyRedirect:
           systemAppOnlyRedirect ?? this.systemAppOnlyRedirect,
@@ -441,7 +437,6 @@ class BrowserSettings {
     'glassOpacity': glassOpacity,
     'blurBackground': blurBackground,
     'hdrDisplay': hdrDisplay,
-    'topBarGlass': topBarGlass,
     'allowAppRedirect': allowAppRedirect,
     'systemAppOnlyRedirect': systemAppOnlyRedirect,
     'allowLocation': allowLocation,
@@ -513,7 +508,6 @@ class BrowserSettings {
       glassOpacity: (json['glassOpacity'] as num?)?.toDouble() ?? 1.0,
       blurBackground: json['blurBackground'] as bool? ?? true,
       hdrDisplay: json['hdrDisplay'] as bool? ?? false,
-      topBarGlass: json['topBarGlass'] as bool? ?? false,
       allowAppRedirect: json['allowAppRedirect'] as bool? ?? true,
       systemAppOnlyRedirect: json['systemAppOnlyRedirect'] as bool? ?? false,
       allowLocation: json['allowLocation'] as bool? ?? true,

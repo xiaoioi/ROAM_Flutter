@@ -45,11 +45,7 @@ class _HomePageState extends State<HomePage> {
   /// 原版首页的搜索框是「假框」：`searchBoxOccupancyView.onClick`
   /// → `showSearchView()`，真正输入发生在弹出的搜索面板里。
   void _openSearch() {
-    showSearchSheet(
-      context: context,
-      controller: widget.controller,
-      useSnapshot: true,
-    );
+    showSearchSheet(context: context, controller: widget.controller);
   }
 
   @override

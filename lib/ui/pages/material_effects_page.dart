@@ -17,14 +17,14 @@ class MaterialEffectsPage extends StatelessWidget {
 
   final BrowserController controller;
 
-  static const _accent = Color(0xFFFF3B30);
-
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
+        // 强调色统一取主题色（miuix 蓝），不再自带一套红色。
+        final accent = Theme.of(context).colorScheme.primary;
         final settings = controller.settings;
         return RoamPageScaffold(
           title: '材质显示效果',
@@ -46,7 +46,7 @@ class MaterialEffectsPage extends StatelessWidget {
                     ),
                     trailing: RoamSwitch(
                       value: settings.edgeFade,
-                      color: _accent,
+                      color: accent,
                       onChanged: (value) => controller.updateSettings(
                         settings.copyWith(edgeFade: value),
                       ),
@@ -61,7 +61,7 @@ class MaterialEffectsPage extends StatelessWidget {
                     ),
                     trailing: RoamSwitch(
                       value: settings.showScrollbar,
-                      color: _accent,
+                      color: accent,
                       onChanged: (value) => controller.updateSettings(
                         settings.copyWith(showScrollbar: value),
                       ),
@@ -206,14 +206,14 @@ class MaterialEffectsPage extends StatelessWidget {
                             overlayShape: const RoundSliderOverlayShape(
                               overlayRadius: 16,
                             ),
-                            activeTrackColor: _accent,
+                            activeTrackColor: accent,
                             inactiveTrackColor:
                                 (isDark
                                         ? RoamColors.textPrimary
                                         : RoamColors.dayInk)
                                     .withValues(alpha: 0.12),
-                            thumbColor: _accent,
-                            overlayColor: _accent.withValues(alpha: 0.15),
+                            thumbColor: accent,
+                            overlayColor: accent.withValues(alpha: 0.15),
                           ),
                           child: Slider(
                             value: settings.glassBlur.clamp(0.5, 2.0),
@@ -229,29 +229,6 @@ class MaterialEffectsPage extends StatelessWidget {
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              // 顶栏圆钮材质：柔光玻璃只有一套，这里切换的是
-              // 「实心圆钮（澎湃 4 原样）」与「真实背景采样的柔光玻璃」。
-              RoamSettingCard(
-                children: [
-                  RoamSettingRow(
-                    icon: 'assets/images/palette.png',
-                    label: '顶栏圆钮玻璃',
-                    subtitle: '关闭时使用澎湃 4 实心圆钮',
-                    showChevron: false,
-                    onTap: () => controller.updateSettings(
-                      settings.copyWith(topBarGlass: !settings.topBarGlass),
-                    ),
-                    trailing: RoamSwitch(
-                      value: settings.topBarGlass,
-                      color: _accent,
-                      onChanged: (value) => controller.updateSettings(
-                        settings.copyWith(topBarGlass: value),
-                      ),
-                    ),
-                  ),
-                ],
               ),
               const SizedBox(height: 8),
               Padding(
@@ -273,7 +250,7 @@ class MaterialEffectsPage extends StatelessWidget {
                         ),
                         trailing: RoamSwitch(
                           value: settings.rimLight,
-                          color: _accent,
+                          color: accent,
                           onChanged: (value) => controller.updateSettings(
                             settings.copyWith(rimLight: value),
                           ),
@@ -295,7 +272,11 @@ class MaterialEffectsPage extends StatelessWidget {
   }
 }
 
-/// 分段选择器：高斯模糊（性能/效果）、玻璃引擎（自绘/MIUIX）共用。
+/// 分段选择器：高斯模糊（性能/效果）、玻璃引擎（自绘 / MIUIX）共用。
+///
+/// 用 miuix 的 [MiuixGlassSegmentedTabRow]——**相连的分段轨道**：
+/// 一条共用轨道 + 选中指示块连续滑动，和系统「过滤排序」控件一致，
+/// 不再是各段独立胶囊。
 class _Segments extends StatelessWidget {
   const _Segments({
     required this.value,
@@ -311,53 +292,12 @@ class _Segments extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      height: 44,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        color: isDark ? RoamColors.itemDark : RoamColors.itemLight,
-      ),
-      child: Row(
-        children: [
-          for (final option in options)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(5),
-                child: PressableScale(
-                  scale: 0.97,
-                  onTap: () => onChanged(option.$1),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(17),
-                      color: option.$1 == value
-                          ? (isDark ? const Color(0xFF3A3A3C) : Colors.white)
-                          : Colors.transparent,
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      option.$2,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: option.$1 == value
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                        color:
-                            (isDark
-                                    ? RoamColors.textPrimary
-                                    : RoamColors.dayInk)
-                                .withValues(
-                                  alpha: option.$1 == value ? 1 : 0.62,
-                                ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+    final index = options.indexWhere((option) => option.$1 == value);
+    return MiuixGlassSegmentedTabRow(
+      tabs: [for (final option in options) option.$2],
+      selectedIndex: index < 0 ? 0 : index,
+      onSelect: (i) => onChanged(options[i].$1),
+      height: 40,
     );
   }
 }

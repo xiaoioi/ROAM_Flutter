@@ -89,25 +89,13 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
   }
 
   void _openMenu() {
-    // 首页的下层是普通 Flutter 图层，能被离屏快照捕获；
-    // 网页是 platform view，快照里没有内容，玻璃要走实时模糊分支。
-    final tab = _controller.activeTab;
-    showMenuSheet(
-      context: context,
-      controller: _controller,
-      useSnapshot: tab?.isHome ?? true,
-    );
+    showMenuSheet(context: context, controller: _controller);
   }
 
   /// 顶栏中间的空白 / 标题区域：原版 `webViewSearchResponseView.onClick`
   /// → `showSearchView()`，弹出第二个界面（搜索面板）。
   void _openSearch() {
-    final tab = _controller.activeTab;
-    showSearchSheet(
-      context: context,
-      controller: _controller,
-      useSnapshot: tab?.isHome ?? true,
-    );
+    showSearchSheet(context: context, controller: _controller);
   }
 
   @override

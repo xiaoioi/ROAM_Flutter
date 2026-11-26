@@ -2,17 +2,27 @@
 
 import 'package:flutter/material.dart';
 
-/// 星环的品牌色板：夜空为底，极光青为主色，虹紫作次色。
+/// 星环的品牌色板：夜空为底，**miuix 蓝**为主色。
+///
+/// 强调色不再自创色相，直接取 flutter_miuix 的 `MiuixColors` 默认主色
+/// （浅色 `#3482FF` / 深色 `#277AF7`），这样 Material 控件、`MiuixSwitch`、
+/// 分段轨道、玻璃选中块全都是同一支蓝，不会再「突然冒出一块红色」。
+/// [danger] 只留给「删除 / 危险操作」这类语义，不当强调色用。
 abstract final class RoamColors {
   static const ink = Color(0xFF05070D);
   static const night = Color(0xFF080D19);
   static const deep = Color(0xFF0C1424);
   static const slate = Color(0xFF16203A);
 
-  static const aurora = Color(0xFF4EE3C2);
-  static const auroraDeep = Color(0xFF17B99B);
-  static const iris = Color(0xFF8C7BFF);
-  static const sky = Color(0xFF3FC6FF);
+  /// miuix 浅色主色。
+  static const aurora = Color(0xFF3482FF);
+
+  /// miuix 深色主色。
+  static const auroraDeep = Color(0xFF277AF7);
+
+  /// 次级蓝：miuix 滑块关键点前景色（浅色 `#6EB5FF`）。
+  static const iris = Color(0xFF6EB5FF);
+  static const sky = Color(0xFF5EC8FF);
   static const amber = Color(0xFFFFD08A);
   static const danger = Color(0xFFFF6B6B);
 

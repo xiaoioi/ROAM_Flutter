@@ -23,6 +23,7 @@ class RoamPageScaffold extends StatefulWidget {
     this.onBack,
     this.showBack = true,
     this.topBar,
+    this.overlayBuilder,
   });
 
   /// 悬浮顶栏高度（HyperOS 4 系统应用实测值）。
@@ -42,6 +43,12 @@ class RoamPageScaffold extends StatefulWidget {
   /// 替换默认顶栏（例如搜索模式下的搜索栏）。
   /// 高度仍按 [barHeight] 的槽位摆放，内容自行决定在槽位里怎么排。
   final Widget? topBar;
+
+  /// 盖在整页之上的浮层（全屏搜索等）。
+  ///
+  /// 它落在**背景捕获子树之外**：采样 [MiuixLayerBackdrop] 时拿到的是
+  /// 干净的页面快照，不会把浮层自己录进去（避免玻璃自采样）。
+  final Widget Function(MiuixLayerBackdrop backdrop)? overlayBuilder;
 
   @override
   State<RoamPageScaffold> createState() => _RoamPageScaffoldState();
@@ -74,14 +81,11 @@ class _RoamPageScaffoldState extends State<RoamPageScaffold> {
       body: ListenableBuilder(
         listenable: GlassRuntime.repaint,
         builder: (context, _) {
-          // 性能模式下不跑渐变模糊，圆钮也不采样背景（直接走实心），
-          // 材质总开关关闭时同理。
+          // 性能模式下不跑渐变模糊，圆钮也不采样背景（miuix 会退回
+          // 不带折射的玻璃底），材质总开关关闭时同理。
           final perf = GlassRuntime.performance.value;
           final edgeFade = GlassRuntime.edgeFade.value && !perf;
-          final glassButtons =
-              GlassRuntime.topBarGlass.value &&
-              GlassRuntime.material.value &&
-              !perf;
+          final glassButtons = GlassRuntime.material.value && !perf;
           final needCapture = edgeFade || glassButtons;
 
           // 底色 + 内容放在同一个捕获子树里：玻璃和渐隐都采样它。
@@ -109,8 +113,6 @@ class _RoamPageScaffoldState extends State<RoamPageScaffold> {
           // 所以列表第一张卡片的顶边是清晰的，不会被误糊。
           const tail = 8.0;
           final topFadeHeight = safeTop + RoamPageScaffold.barHeight + tail;
-          final solidStop =
-              (safeTop + RoamPageScaffold.barHeight) / topFadeHeight;
 
           return Stack(
             fit: StackFit.expand,
@@ -142,10 +144,8 @@ class _RoamPageScaffoldState extends State<RoamPageScaffold> {
                   right: 0,
                   height: topFadeHeight,
                   child: IgnorePointer(
-                    child: RoamEdgeFade(
-                      backdrop: _backdrop,
-                      solidStop: solidStop,
-                    ),
+                    // 与 miuix 顶栏同一条 progressive blur 带：上糊下清。
+                    child: RoamEdgeFade(backdrop: _backdrop),
                   ),
                 ),
               // 顶栏：透明底 + 圆形玻璃钮 + 居中标题
@@ -163,13 +163,15 @@ class _RoamPageScaffoldState extends State<RoamPageScaffold> {
                         actions: widget.actions,
                         onBack: widget.onBack,
                         showBack: widget.showBack,
-                        glass: glassButtons,
-                        miuixLayer: _backdrop,
+                        miuixLayer: glassButtons ? _backdrop : null,
                       ),
                 ),
               ),
               if (widget.bottom != null)
                 Positioned(left: 0, right: 0, bottom: 0, child: widget.bottom!),
+              // 全屏浮层（搜索）：在捕获子树外面，玻璃能采到真背景。
+              if (widget.overlayBuilder != null)
+                Positioned.fill(child: widget.overlayBuilder!(_backdrop)),
             ],
           );
         },
@@ -488,7 +490,7 @@ class RoamSwitch extends StatelessWidget {
   final bool value;
   final ValueChanged<bool>? onChanged;
 
-  /// 打开状态下的轨道颜色；原版材质页用的是品牌红。
+  /// 打开状态下的轨道颜色；不传则跟随 miuix 主题色（蓝）。
   final Color? color;
 
   @override

@@ -1,36 +1,23 @@
 // ignore_for_file: deprecated_member_use
 
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_miuix/miuix.dart';
 
 import '../../state/browser_controller.dart';
-import '../glass/layout_motion_repaint.dart';
-import '../glass/os4_glass_token.dart';
-import '../glass/roam_glass.dart';
-import '../glass/roam_glass_bridge.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/predictive_back.dart';
+import '../widgets/roam_sheet.dart';
 import '../pages/history_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/translate_page.dart';
 import '../app_messenger.dart';
 
 /// 底部菜单：ROAM 新版工具栏 —— 时间头 + 「工具栏」标题 + 4 列功能网格
-/// + 页点。玻璃为 miuix 柔光玻璃（HyperOS），图标底座浅色圆。
-///
-/// [useSnapshot] 指明下层内容能否被离屏快照捕获：
-///  - true（首页）：壁纸是普通 Flutter 图层，玻璃用 miuix 折射 shader；
-///  - false（网页）：WebView 是 platform view，`toImage` 快照里没有它的
-///    像素，shader 会拿到空纹理把面板画成全透明，必须改走实时
-///    [BackdropFilter] 磨砂。
+/// + 页点。外壳统一走 [RoamGlassSheetSurface]（miuix GlassBottomSheet 表面）。
 Future<void> showMenuSheet({
   required BuildContext context,
   required BrowserController controller,
   bool? isDark,
-  bool useSnapshot = true,
 }) {
   final dark = isDark ?? Theme.of(context).brightness == Brightness.dark;
   return showModalBottomSheet<void>(
@@ -41,25 +28,16 @@ Future<void> showMenuSheet({
     builder: (sheetContext) => PredictiveBackScope(
       style: PredictiveBackStyle.sheet,
       onCommit: () => Navigator.of(sheetContext).maybePop(),
-      child: _MenuPanel(
-        controller: controller,
-        isDark: dark,
-        useSnapshot: useSnapshot,
-      ),
+      child: _MenuPanel(controller: controller, isDark: dark),
     ),
   );
 }
 
 class _MenuPanel extends StatefulWidget {
-  const _MenuPanel({
-    required this.controller,
-    required this.isDark,
-    required this.useSnapshot,
-  });
+  const _MenuPanel({required this.controller, required this.isDark});
 
   final BrowserController controller;
   final bool isDark;
-  final bool useSnapshot;
 
   @override
   State<_MenuPanel> createState() => _MenuPanelState();
@@ -92,7 +70,6 @@ class _MenuPanelState extends State<_MenuPanel> {
     final now = DateTime.now();
     const weeks = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
     final height = MediaQuery.sizeOf(context).height * 0.70;
-    final useGlass = GlassRuntime.material.value;
 
     // 工具栏自定义：按设置里的顺序/显隐生成条目
     final all = _catalog(context);
@@ -207,19 +184,7 @@ class _MenuPanelState extends State<_MenuPanel> {
       ),
     );
 
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-      child: useGlass
-          ? _PanelGlass(
-              isDark: isDark,
-              useSnapshot: widget.useSnapshot,
-              child: content,
-            )
-          : ColoredBox(
-              color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-              child: content,
-            ),
-    );
+    return RoamGlassSheetSurface(child: content);
   }
 
   /// 功能目录：id → 条目。工具栏自定义页与这里共用 id。
@@ -373,118 +338,6 @@ class _MenuPanelState extends State<_MenuPanel> {
   void _toast(BuildContext context, String message) {
     if (!mounted) return;
     showRoamToast(message, duration: const Duration(milliseconds: 1400));
-  }
-}
-
-/// 工具栏玻璃：flutter_miuix 的 OS4 柔光玻璃，图2 的通透磨砂。
-class _PanelGlass extends StatelessWidget {
-  const _PanelGlass({
-    required this.isDark,
-    required this.useSnapshot,
-    required this.child,
-  });
-
-  final bool isDark;
-
-  /// 下层内容能否被离屏快照捕获（首页 true / 网页 false）。
-  final bool useSnapshot;
-  final Widget child;
-
-  /// 面板级薄玻璃参数。
-  ///
-  /// 工具栏是 70% 屏高的大面积，不能用 small（按钮级）样式：
-  /// `commonSmallThin` 的 `reflect.lighten = 2.0` 在这么大面积上会把背景
-  /// 高光整片放大成雾状泛光（「光全散开」）；`commonMediumThinLow` 是
-  /// MIUI 的面板级参数（lighten 1.0、ior 2.0），折射更强、泛光收敛。
-  /// 模糊半径再从 36 收到 18，保留一点背景轮廓，不至于糊成一团。
-  static final MiuixGlassStyle _panelStyle = () {
-    final base = MiuixGlassStyles.commonMediumThinLow;
-    return base.copyWith(
-      blend: base.blend.copyWith(saturation: 1.2),
-      blur: const MiuixGlassBlur(small: 18, big: 260),
-    );
-  }();
-
-  @override
-  Widget build(BuildContext context) {
-    const corner = BorderRadius.vertical(top: Radius.circular(15));
-    const shape = MiuixGlassShape(borderRadius: corner);
-
-    // 玻璃的采样 UV 是在 paint 里读的；面板被 BottomSheet 拖拽或
-    // 预测式返回的 Transform 带走时子树不会重绘，背景就会停在原处。
-    // 这一层把「位置变了」变成一次重绘信号。
-    return LayoutMotionRepaint(
-      child: ListenableBuilder(
-        listenable: GlassRuntime.repaint,
-        builder: (context, _) {
-        final customGlass = GlassRuntime.customGlass.value;
-
-        // 网页 tab：WebView 是 platform view，离屏快照（toImage）里没有它的
-        // 像素——shader 采样到空纹理，整块面板会画成透明。这里改用实时
-        // BackdropFilter（在图层合成时取背景，platform view 也能被模糊），
-        // 再叠实色面 + 描边/rim，得到可读的磨砂玻璃。
-        // 折射在这里无法实现，属于平台限制下的降级。
-        if (!useSnapshot) {
-          if (customGlass) {
-            return ClipRRect(
-              borderRadius: corner,
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                child: ColoredBox(
-                  color: isDark
-                      ? const Color(0xE62A2A2C)
-                      : Colors.white.withValues(alpha: 0.76),
-                  child: child,
-                ),
-              ),
-            );
-          }
-          return ClipRRect(
-            borderRadius: corner,
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: MiuixGlass(
-                style: _panelStyle,
-                // 平台限制下不冒充折射：关掉 shading 走磨砂面。
-                shading: false,
-                fill: isDark
-                    ? const Color(0xE62A2A2C)
-                    : Colors.white.withValues(alpha: 0.76),
-                shape: shape,
-                child: child,
-              ),
-            ),
-          );
-        }
-
-        // 自绘 OS4 柔光玻璃（默认引擎）。面板四角只圆上面两个——
-        // 底边贴屏幕下沿，用 borderRadius 而不是统一 radius。
-        if (customGlass) {
-          return ClipRRect(
-            borderRadius: corner,
-            child: RoamGlassSceneBridge(
-              backdrop: miuixBackdrop,
-              child: RoamGlass(
-                token: Os4GlassToken.commonSmallRegular,
-                borderRadius: corner,
-                child: child,
-              ),
-            ),
-          );
-        }
-
-        // miuix 柔光玻璃（可切换回的旧引擎）——仿生 GlassStyle。
-        // 注意 shading 模式会忽略 fill；alpha 是淡入动画进度而非透明度。
-        return MiuixGlass(
-          backdrop: miuixBackdrop,
-          style: _panelStyle,
-          shading: true,
-          shape: shape,
-          child: child,
-        );
-        },
-      ),
-    );
   }
 }
 

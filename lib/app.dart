@@ -35,7 +35,6 @@ class _RoamAppState extends State<RoamApp> {
   late bool _liquidMaterial;
   late bool _rimLight;
   late bool _showScrollbar;
-  late bool _topBarGlass;
   late bool _edgeFade;
   late bool _customGlass;
   late double _glassBlur;
@@ -54,11 +53,9 @@ class _RoamAppState extends State<RoamApp> {
     _liquidMaterial = settings.liquidMaterial;
     _rimLight = settings.rimLight;
     _showScrollbar = settings.showScrollbar;
-    _topBarGlass = settings.topBarGlass;
     _edgeFade = settings.edgeFade;
     _customGlass = settings.customGlass;
     _glassBlur = settings.glassBlur;
-    GlassRuntime.topBarGlass.value = _topBarGlass;
     GlassRuntime.customGlass.value = _customGlass;
     GlassRuntime.blurScale.value = _glassBlur;
     GlassRuntime.performance.value = _blurQuality == 'performance';
@@ -99,7 +96,6 @@ class _RoamAppState extends State<RoamApp> {
         settings.rimLight != _rimLight ||
         settings.showScrollbar != _showScrollbar ||
         settings.edgeFade != _edgeFade ||
-        settings.topBarGlass != _topBarGlass ||
         settings.customGlass != _customGlass ||
         settings.glassBlur != _glassBlur;
     if (!changed || !mounted) return;
@@ -110,8 +106,7 @@ class _RoamAppState extends State<RoamApp> {
       _liquidMaterial = settings.liquidMaterial;
       _rimLight = settings.rimLight;
       _showScrollbar = settings.showScrollbar;
-      _topBarGlass = settings.topBarGlass;
-      _edgeFade = settings.edgeFade;
+        _edgeFade = settings.edgeFade;
       _customGlass = settings.customGlass;
       _glassBlur = settings.glassBlur;
     });
@@ -134,7 +129,6 @@ class _RoamAppState extends State<RoamApp> {
     GlassRuntime.material.value = _liquidMaterial;
     GlassRuntime.rimLight.value = _rimLight;
     GlassRuntime.edgeFade.value = _edgeFade;
-    GlassRuntime.topBarGlass.value = _topBarGlass;
     GlassRuntime.customGlass.value = _customGlass;
     GlassRuntime.blurScale.value = _glassBlur;
     GlassRuntime.performance.value = _blurQuality == 'performance';

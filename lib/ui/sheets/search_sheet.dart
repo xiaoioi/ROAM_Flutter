@@ -1,19 +1,13 @@
 // ignore_for_file: deprecated_member_use
 
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_miuix/miuix.dart';
 
 import '../../models/browser_models.dart';
 import '../../state/browser_controller.dart';
-import '../glass/layout_motion_repaint.dart';
-import '../glass/os4_glass_token.dart';
-import '../glass/roam_glass.dart';
-import '../glass/roam_glass_bridge.dart';
-import '../widgets/glass_controls.dart';
 import '../widgets/predictive_back.dart';
+import '../widgets/roam_sheet.dart';
 
 /// 首页顶栏空白处 / 网页标题处点击后弹出的「第二界面」。
 ///
@@ -33,7 +27,6 @@ import '../widgets/predictive_back.dart';
 Future<void> showSearchSheet({
   required BuildContext context,
   required BrowserController controller,
-  bool useSnapshot = true,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -47,16 +40,15 @@ Future<void> showSearchSheet({
         FocusScope.of(sheetContext).unfocus();
         Navigator.of(sheetContext).maybePop();
       },
-      child: _SearchSheet(controller: controller, useSnapshot: useSnapshot),
+      child: _SearchSheet(controller: controller),
     ),
   );
 }
 
 class _SearchSheet extends StatefulWidget {
-  const _SearchSheet({required this.controller, required this.useSnapshot});
+  const _SearchSheet({required this.controller});
 
   final BrowserController controller;
-  final bool useSnapshot;
 
   @override
   State<_SearchSheet> createState() => _SearchSheetState();
@@ -316,14 +308,7 @@ class _SearchSheetState extends State<_SearchSheet> {
     return Padding(
       // 键盘弹起时整块面板上移，输入框不会被 IME 盖住。
       padding: EdgeInsets.only(bottom: keyboard),
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        child: _SheetGlass(
-          useSnapshot: widget.useSnapshot,
-          isDark: isDark,
-          child: content,
-        ),
-      ),
+      child: RoamGlassSheetSurface(child: content),
     );
   }
 }
@@ -496,89 +481,3 @@ class _HistoryCard extends StatelessWidget {
   }
 }
 
-/// 面板玻璃：与工具栏面板同一套 OS4 柔光玻璃，圆角只留顶部 28dp。
-class _SheetGlass extends StatelessWidget {
-  const _SheetGlass({
-    required this.isDark,
-    required this.useSnapshot,
-    required this.child,
-  });
-
-  final bool isDark;
-  final bool useSnapshot;
-  final Widget child;
-
-  static final MiuixGlassStyle _panelStyle = () {
-    final base = MiuixGlassStyles.commonMediumThinLow;
-    return base.copyWith(
-      blend: base.blend.copyWith(saturation: 1.2),
-      blur: const MiuixGlassBlur(small: 18, big: 260),
-    );
-  }();
-
-  @override
-  Widget build(BuildContext context) {
-    const corner = BorderRadius.vertical(top: Radius.circular(28));
-    const shape = MiuixGlassShape(borderRadius: corner);
-
-    // 面板被 BottomSheet 的拖拽 / 预测式返回的 Transform 带走时，
-    // 子树自己不会重绘，玻璃里的背景会「钉」在原地。这个包装把它
-    // 变成一次重绘信号。
-    return LayoutMotionRepaint(
-      child: ListenableBuilder(
-        listenable: GlassRuntime.repaint,
-        builder: (context, _) {
-        final customGlass = GlassRuntime.customGlass.value;
-
-        // 网页 tab：WebView 是 platform view，离屏快照里没有像素，
-        // 只能退到合成阶段的实时模糊。
-        if (!useSnapshot) {
-          return BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-            child: ColoredBox(
-              color: isDark
-                  ? const Color(0xE62A2A2C)
-                  : Colors.white.withValues(alpha: 0.86),
-              child: child,
-            ),
-          );
-        }
-
-        // 玻璃上再压一层薄面纱：搜索面板是大段文字，
-        // 纯折射玻璃会把背景的图标、色块透进来，文字压不住。
-        // OS4 原版搜索面板同样有一层 scrim（不是纯玻璃）。
-        final tinted = DecoratedBox(
-          decoration: BoxDecoration(
-            color: isDark
-                ? const Color(0x8F232326)
-                : Colors.white.withValues(alpha: 0.5),
-          ),
-          child: child,
-        );
-
-        if (customGlass) {
-          return RoamGlassSceneBridge(
-            backdrop: miuixBackdrop,
-            // 面板级模糊：small 玻璃的 σ 只有 4，是按钮级的；
-            // 整屏面板用 2.5 倍（σ≈10），背景只剩色团，标题文字才干净。
-            blurScale: 2.5,
-            child: RoamGlass(
-              token: Os4GlassToken.commonSmallRegular,
-              borderRadius: corner,
-              child: tinted,
-            ),
-          );
-        }
-
-        return MiuixGlass(
-          backdrop: miuixBackdrop,
-          style: _panelStyle,
-          shading: true,
-          shape: shape,
-          child: tinted,
-        );
-        },
-      ),
-    );
-  }
-}
