@@ -6,6 +6,7 @@ import '../../state/browser_controller.dart';
 import '../../theme/roam_theme.dart';
 import '../widgets/predictive_back.dart';
 import '../widgets/roam_chrome.dart';
+import '../widgets/roam_sheet.dart';
 
 /// 法律协议与政策。
 /// 取自 pages/Copyright/main.lua：卡片式列表，点击进入内嵌 WebView。
@@ -61,11 +62,15 @@ class LegalPage extends StatelessWidget {
       builder: (sheetContext) => PredictiveBackScope(
         style: PredictiveBackStyle.sheet,
         onCommit: () => Navigator.of(sheetContext).maybePop(),
-        child: Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-          decoration: roamGlassDecoration(context, radius: 22),
-          child: Column(
+        // 所有底部弹出框统一用 miuix GlassBottomSheet 的玻璃表面，
+        // 这里只是浮起一点（16dp 外边距）做成卡片式抽屉。
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: RoamGlassSheetSurface(
+            radius: 22,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+              child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -91,7 +96,9 @@ class LegalPage extends StatelessWidget {
                   child: const Text('知道了'),
                 ),
               ),
-            ],
+                ],
+              ),
+            ),
           ),
         ),
       ),

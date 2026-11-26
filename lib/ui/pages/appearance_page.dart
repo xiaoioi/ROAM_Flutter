@@ -553,11 +553,11 @@ class _IconPreview extends StatelessWidget {
   }
 }
 
-/// 三段主题选择。
+/// 三段主题选择 → miuix 的 [MiuixGlassSegmentedTabRow]（相连分段轨道）。
 ///
-/// 改用 flutter_miuix 的 [MiuixTabRow]：外轨 16dp 圆角 + 内段 12dp
-/// squircle，指示块用 Folme 弹簧滑动，和系统「应用主题风格」一致。
-/// 只保留外观配色（黑色选中块 / 灰色未选中文字），交互和动效交给 miuix。
+/// 一条共用玻璃轨道 + 选中指示块连续滑动，跟系统「过滤排序」控件一致；
+/// 颜色全部交给 miuix 默认（轨道 = surface 提亮，指示块 = 主题蓝），
+/// 不再自绘一套黑/白选中块。
 class _ThemeSegments extends StatelessWidget {
   const _ThemeSegments({required this.value, required this.onChanged});
 
@@ -566,42 +566,17 @@ class _ThemeSegments extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     const options = [
       (AppThemeMode.system, '跟随系统'),
       (AppThemeMode.dark, '深色模式'),
       (AppThemeMode.light, '浅色模式'),
     ];
     final index = options.indexWhere((option) => option.$1 == value);
-    final fg = isDark ? RoamColors.textPrimary : RoamColors.dayInk;
-
-    return Container(
-      height: 46,
-      padding: const EdgeInsets.all(5),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: isDark ? RoamColors.itemDark : RoamColors.itemLight,
-      ),
-      child: MiuixTabRow(
-        tabs: [for (final option in options) option.$2],
-        selectedTabIndex: index < 0 ? 0 : index,
-        onTabSelected: (i) => onChanged(options[i].$1),
-        height: 36,
-        cornerRadius: 12,
-        itemSpacing: 4,
-        minWidth: 56,
-        // maxWidth 放大，让 available/3 成为实际宽度：三段等分整条轨道，
-        // 而不是被默认 98dp 上限挤在中间。
-        maxWidth: 400,
-        colors: MiuixTabRowColors(
-          backgroundColor: Colors.transparent,
-          contentColor: fg.withValues(alpha: 0.6),
-          selectedBackgroundColor: isDark
-              ? Colors.white.withValues(alpha: 0.92)
-              : RoamColors.dayInk,
-          selectedContentColor: isDark ? RoamColors.dayInk : Colors.white,
-        ),
-      ),
+    return MiuixGlassSegmentedTabRow(
+      tabs: [for (final option in options) option.$2],
+      selectedIndex: index < 0 ? 0 : index,
+      onSelect: (i) => onChanged(options[i].$1),
+      height: 40,
     );
   }
 }

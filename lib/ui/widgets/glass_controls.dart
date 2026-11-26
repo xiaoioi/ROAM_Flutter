@@ -19,7 +19,6 @@ final miuixBackdrop = MiuixLayerBackdrop();
 ///  - [material] 关闭后所有玻璃退回纯色，等同「材质显示效果」总开关。
 ///  - [rimLight] 对应「轮廓光材质」，关掉后不画玻璃边缘的高光。
 ///  - [edgeFade] 顶/底边缘的渐进模糊渐隐。
-///  - [topBarGlass] 顶栏圆钮是否走真实背景采样玻璃（默认实心）。
 ///  - [performance] 「高斯模糊效果」设为性能模式时关掉折射与边缘模糊。
 ///  - [customGlass] 玻璃引擎：true = 自绘 OS4 柔光玻璃（RoamGlass，
 ///    `shaders/roam_glass.frag`，commonSmallRegular 样式，默认）；
@@ -32,7 +31,6 @@ abstract final class GlassRuntime {
   static final ValueNotifier<bool> material = ValueNotifier(true);
   static final ValueNotifier<bool> rimLight = ValueNotifier(true);
   static final ValueNotifier<bool> edgeFade = ValueNotifier(true);
-  static final ValueNotifier<bool> topBarGlass = ValueNotifier(false);
   static final ValueNotifier<bool> performance = ValueNotifier(false);
 
   /// true = 自绘柔光玻璃（默认），false = miuix 玻璃。
@@ -49,7 +47,6 @@ abstract final class GlassRuntime {
     material,
     rimLight,
     edgeFade,
-    topBarGlass,
     performance,
     customGlass,
     blurScale,

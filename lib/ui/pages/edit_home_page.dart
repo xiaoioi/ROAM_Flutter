@@ -7,8 +7,10 @@ import 'package:flutter/services.dart';
 
 import '../../models/browser_models.dart';
 import '../../state/browser_controller.dart';
+import '../../theme/roam_theme.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/predictive_back.dart';
+import '../widgets/roam_sheet.dart';
 import 'material_effects_page.dart';
 import '../app_messenger.dart';
 
@@ -383,7 +385,7 @@ class _BottomToolbar extends StatelessWidget {
                       height: 50,
                       decoration: BoxDecoration(
                         color: item.active
-                            ? const Color(0xFFFF9500)
+                            ? RoamColors.aurora
                             : Colors.white.withValues(alpha: 0.12),
                         shape: BoxShape.circle,
                       ),
@@ -419,7 +421,7 @@ class _BottomToolbar extends StatelessWidget {
                         fontSize: 10,
                         fontWeight: FontWeight.w500,
                         color: item.active
-                            ? const Color(0xFFFF9500)
+                            ? RoamColors.aurora
                             : Colors.white70,
                       ),
                     ),
@@ -477,18 +479,17 @@ class _DimSheet extends StatelessWidget {
         final hasWallpaper =
             settings.wallpaper != 'none' ||
             settings.customWallpaperPath.isNotEmpty;
-        return Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFF1C1C1E),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
-          ),
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 15,
-            bottom: MediaQuery.paddingOf(context).bottom + 20,
-          ),
-          child: Column(
+        // 底部弹出框统一走 miuix GlassBottomSheet 表面；壁纸上固定深色。
+        return RoamGlassSheetSurface(
+          forceDark: true,
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 15,
+              bottom: MediaQuery.paddingOf(context).bottom + 20,
+            ),
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -516,10 +517,10 @@ class _DimSheet extends StatelessWidget {
                   const Spacer(),
                   Text(
                     '${(value * 100).round()}%',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFFFF9500),
+                      color: RoamColors.aurora,
                     ),
                   ),
                 ],
@@ -533,7 +534,7 @@ class _DimSheet extends StatelessWidget {
               SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   trackHeight: 4,
-                  activeTrackColor: const Color(0xFFFF9500),
+                  activeTrackColor: RoamColors.aurora,
                   inactiveTrackColor: Colors.white24,
                   thumbColor: Colors.white,
                   overlayColor: const Color(0x33FF9500),
@@ -585,7 +586,7 @@ class _DimSheet extends StatelessWidget {
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
                                 color: (value - preset.$2).abs() < 0.01
-                                    ? const Color(0xFFFF9500)
+                                    ? RoamColors.aurora
                                     : Colors.transparent,
                               ),
                             ),
@@ -595,7 +596,7 @@ class _DimSheet extends StatelessWidget {
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 color: (value - preset.$2).abs() < 0.01
-                                    ? const Color(0xFFFF9500)
+                                    ? RoamColors.aurora
                                     : Colors.white70,
                               ),
                             ),
@@ -612,7 +613,8 @@ class _DimSheet extends StatelessWidget {
                   style: TextStyle(fontSize: 12, color: Colors.white38),
                 ),
               ],
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -647,18 +649,16 @@ class _BackgroundSheet extends StatelessWidget {
     final settings = controller.settings;
     final current = settings.wallpaper;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1C1C1E),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-      ),
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 15,
-        bottom: MediaQuery.paddingOf(context).bottom + 20,
-      ),
-      child: Column(
+    return RoamGlassSheetSurface(
+      forceDark: true,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 15,
+          bottom: MediaQuery.paddingOf(context).bottom + 20,
+        ),
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -719,7 +719,7 @@ class _BackgroundSheet extends StatelessWidget {
                           color:
                               current == wp &&
                                   settings.customWallpaperPath.isEmpty
-                              ? const Color(0xFF0A84FF)
+                              ? RoamColors.aurora
                               : Colors.white24,
                           width: 2,
                         ),
@@ -823,7 +823,8 @@ class _BackgroundSheet extends StatelessWidget {
                 ),
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }

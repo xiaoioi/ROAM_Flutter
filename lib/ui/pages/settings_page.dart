@@ -10,7 +10,7 @@ import '../widgets/confirm.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/roam_chrome.dart';
 import '../widgets/hyperos_top_bar.dart';
-import '../widgets/roam_search_bar.dart';
+import '../widgets/glass_search_overlay.dart';
 import '../widgets/roam_sheet.dart';
 import 'about_page.dart';
 import 'ai_settings_page.dart';
@@ -41,55 +41,23 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  final _searchController = TextEditingController();
-  final _searchFocus = FocusNode();
-  String _query = '';
-
-  /// 搜索模式：整条顶栏替换成安全服务同款搜索栏（56dp）。
+  /// 全屏玻璃搜索浮层是否展开（miuix GlassSearchOverlay 形态）。
   bool _searching = false;
 
   BrowserController get _controller => widget.controller;
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _searchFocus.dispose();
-    super.dispose();
-  }
-
-  void _enterSearch() {
-    setState(() => _searching = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _searchFocus.requestFocus();
-    });
-  }
+  void _enterSearch() => setState(() => _searching = true);
 
   void _exitSearch() {
     if (!_searching) return;
-    _searchFocus.unfocus();
-    _searchController.clear();
-    setState(() {
-      _searching = false;
-      _query = '';
-    });
+    setState(() => _searching = false);
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final groups = _buildGroups(context);
-    final query = _query.trim().toLowerCase();
-    final visible = query.isEmpty
-        ? groups
-        : [
-            for (final group in groups)
-              _Group(group.title, [
-                for (final item in group.items)
-                  if (item.label.toLowerCase().contains(query) ||
-                      (item.subtitle ?? '').toLowerCase().contains(query))
-                    item,
-              ]),
-          ].where((group) => group.items.isNotEmpty).toList();
+    final visible = groups;
 
     return PopScope(
       // 搜索模式下按返回键先退出搜索，不直接退出设置页。
@@ -98,17 +66,29 @@ class _SettingsPageState extends State<SettingsPage> {
         if (!didPop) _exitSearch();
       },
       child: RoamPageScaffold(
-        title: _searching ? '' : '设置',
-        topBar: _searching
-            ? RoamSearchBar(
-                controller: _searchController,
-                focusNode: _searchFocus,
-                onChanged: (value) => setState(() => _query = value),
-                onCancel: _exitSearch,
+        title: '设置',
+        // 搜索按钮 → 全屏玻璃搜索浮层（miuix GlassSearchOverlay 形态）。
+        // 浮层挂在页面 Stack 的最上层、背景捕获之外，玻璃可以采到真背景。
+        overlayBuilder: _searching
+            ? (backdrop) => RoamGlassSearchOverlay(
+                backdrop: backdrop,
+                hint: '搜索设置项',
+                entries: [
+                  for (final group in groups)
+                    for (final item in group.items)
+                      GlassSearchEntry(
+                        title: item.label,
+                        subtitle: item.subtitle,
+                        group: group.title,
+                        icon: item.icon,
+                        onTap: item.onTap,
+                      ),
+                ],
+                onClose: _exitSearch,
               )
             : null,
         actions: [
-          // 图 1 的两个圆钮：搜索（切到搜索栏）+ 更多
+          // 两个玻璃圆钮：搜索（打开全屏玻璃搜索浮层）+ 更多
           HyperosBarAction(
             asset: 'assets/images/search_lc.png',
             tooltip: '搜索设置',
@@ -123,16 +103,13 @@ class _SettingsPageState extends State<SettingsPage> {
         // 背景捕获已由 RoamPageScaffold 统一提供（底色 + 内容一起采样），
         // 这里再录一份只会让每帧多一次 toImage。
         child: ListView(
-          padding: EdgeInsets.only(
-            // 普通态让出悬浮顶栏；搜索态让出 56dp 搜索栏。
-            top: _searching
-                ? RoamSearchBar.height + 8
-                : RoamPageScaffold.contentTopPadding,
+          padding: const EdgeInsets.only(
+            top: RoamPageScaffold.contentTopPadding,
             bottom: 16,
           ),
           physics: const BouncingScrollPhysics(),
           children: [
-            if (query.isEmpty) _AccountCard(controller: _controller),
+            _AccountCard(controller: _controller),
             for (final group in visible) ...[
               if (group.title.isNotEmpty)
                 Padding(
@@ -187,21 +164,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
             ],
-            if (visible.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 80),
-                child: Center(
-                  child: Text(
-                    '没有找到相关设置项',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color:
-                          (isDark ? RoamColors.textPrimary : RoamColors.dayInk)
-                              .withValues(alpha: 0.4),
-                    ),
-                  ),
-                ),
-              ),
             const SizedBox(height: 20),
           ],
         ),

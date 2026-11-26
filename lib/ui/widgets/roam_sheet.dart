@@ -1,12 +1,22 @@
 // ignore_for_file: deprecated_member_use
 
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../../theme/roam_theme.dart';
 import 'glass_controls.dart';
 import 'predictive_back.dart';
 
-/// 星环统一的底部玻璃面板：圆角只留在顶部，内容超出时可滚动。
+/// 星环统一的底部玻璃面板：`miuix` 的 GlassBottomSheet 表面 + 顶部圆角。
+///
+/// 表面直接取 flutter_miuix `GlassBottomSheet` 的那一套：
+/// [MiuixGlassBottomSheetDefaults.material]（dialogGlass 三层材质）、
+/// [MiuixGlassBottomSheetDefaults.stroke]（forTheme 高光描边）、
+/// [MiuixBottomSheetDefaults.cornerRadius] 的顶部圆角。区别只在于
+/// 面板底下多垫了一层实时高斯模糊——网页 / 设置页都能透出真实背景，
+/// 而不是采样一份可能已经过期的快照（WebView 是 platform view，录不进快照）。
 Future<T?> showRoamSheet<T>({
   required BuildContext context,
   required String title,
@@ -33,15 +43,11 @@ Future<T?> showRoamSheet<T>({
         onCommit: () => Navigator.of(sheetContext).maybePop(),
         child: ConstrainedBox(
           constraints: BoxConstraints(maxHeight: maxHeight),
-          child: RoamGlassPanel(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-            surfaceColor: isDark
-                ? const Color(0xFF0F1524).withValues(alpha: 0.94)
-                : Colors.white.withValues(alpha: 0.97),
+          child: RoamGlassSheetSurface(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const _SheetHandle(),
+                const RoamSheetHandle(),
                 _SheetHeader(title: title, subtitle: subtitle),
                 Flexible(
                   child: SingleChildScrollView(
@@ -68,19 +74,100 @@ Future<T?> showRoamSheet<T>({
   );
 }
 
-class _SheetHandle extends StatelessWidget {
-  const _SheetHandle();
+/// miuix GlassBottomSheet 的玻璃表面。
+///
+/// 所有底部弹出框（[showRoamSheet]、菜单、搜索、许可协议、主界面设置）都用它，
+/// 保证圆角、描边、材质、模糊是一家。`GlassRuntime.performance` 打开时
+/// 跳过实时模糊，只留玻璃底与描边，避免低端机上每次拖动都重算背景。
+class RoamGlassSheetSurface extends StatelessWidget {
+  const RoamGlassSheetSurface({
+    super.key,
+    required this.child,
+    this.radius = MiuixBottomSheetDefaults.cornerRadius,
+    this.sigma = 30,
+    this.forceDark,
+  });
+
+  final Widget child;
+  final double radius;
+  final double sigma;
+
+  /// 强制按深色渲染（首页壁纸上的抽屉：壁纸上的玻璃要深底白字）。
+  final bool? forceDark;
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDark =
+        forceDark ?? (Theme.of(context).brightness == Brightness.dark);
+    final borderRadius = BorderRadius.vertical(top: Radius.circular(radius));
+    final shape = MiuixGlassShape(borderRadius: borderRadius);
+
+    // 材质总开关 / 性能模式：不跑实时模糊，保留 miuix 的玻璃底与描边。
+    final blur =
+        GlassRuntime.material.value && !GlassRuntime.performance.value;
+
+    // OS4 三层材质：左上高光 → 底色 → 底部略沉，和 GlassBottomSheet 一致。
+    final tint = isDark
+        ? const Color(0xFF101318).withValues(alpha: 0.82)
+        : Colors.white.withValues(alpha: 0.88);
+
+    Widget body = DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color.alphaBlend(
+              Colors.white.withValues(alpha: isDark ? 0.05 : 0.10),
+              tint,
+            ),
+            tint,
+            Color.alphaBlend(
+              Colors.black.withValues(alpha: isDark ? 0.12 : 0.02),
+              tint,
+            ),
+          ],
+          stops: const [0, 0.55, 1],
+        ),
+      ),
+      child: child,
+    );
+    if (blur) {
+      body = BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        child: body,
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: borderRadius,
+      child: MiuixGlassPanel(
+        shape: shape,
+        material: MiuixGlassBottomSheetDefaults.material(context),
+        stroke: MiuixGlassBottomSheetDefaults.stroke(context),
+        // 底色由上面那层 tint 负责（要压在实时模糊之上），这里不再叠一次。
+        fill: Colors.transparent,
+        shadow: null,
+        shading: false,
+        child: body,
+      ),
+    );
+  }
+}
+
+/// miuix 尺寸的拖拽手柄：45×4，按下时 55×4.6。
+class RoamSheetHandle extends StatelessWidget {
+  const RoamSheetHandle({super.key});
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 10, bottom: 4),
       child: Container(
-        width: 38,
+        width: 45,
         height: 4,
         decoration: BoxDecoration(
-          color: (isDark ? Colors.white : Colors.black).withValues(alpha: 0.22),
+          color: MiuixBottomSheetDefaults.dragHandleColor(context),
           borderRadius: BorderRadius.circular(4),
         ),
       ),
