@@ -162,7 +162,7 @@ class BrowserController extends ChangeNotifier {
     final tab = _tabById(id);
     if (tab == null) return;
     _activeTabId = id;
-    _ensureController(tab);
+    _ensureController(tab, resume: true);
     _persistTabsSoon();
     _notify();
   }
@@ -182,7 +182,7 @@ class BrowserController extends ChangeNotifier {
     } else if (_activeTabId == id) {
       final next = index.clamp(0, _tabs.length - 1);
       _activeTabId = _tabs[next].id;
-      _ensureController(_tabs[next]);
+      _ensureController(_tabs[next], resume: true);
     }
     _persistTabsSoon();
     _notify();
@@ -251,9 +251,20 @@ class BrowserController extends ChangeNotifier {
 
   Future<void> search(String query) => openAddress(query, tab: activeTab);
 
+  /// 回首页。
+  ///
+  /// 只把 `url` 置空是不够的：WebView 实例还活着、还在后台跑上一个页面，
+  /// 它随后的 `onPageFinished` 会把 `tab.url` 写回去，界面就从首页弹回旧网页
+  /// （再打开新页面时还会先闪一下旧页面，返回键也回得到旧页面）。
+  ///
+  /// 所以这里直接把这个标签页的 WebView 断开：引用置空 → 旧 controller 的
+  /// 所有回调被代际校验拦掉；顺手导航到 `about:blank` 停掉正在跑的请求；
+  /// 视图树里的 `WebViewHost` 也会随下一帧重建被移除。
   void goHome(BrowserTab? tab) {
     final target = tab ?? activeTab;
     if (target == null) return;
+    final controller = target.webController;
+    target.webController = null;
     // 回首页等于把这一页的历史作废，预览图也没意义了。
     PagePreviewCache.instance.drop(target.id);
     target
@@ -264,8 +275,19 @@ class BrowserController extends ChangeNotifier {
       ..errorDescription = null
       ..canGoBack = false
       ..canGoForward = false;
+    if (controller != null) unawaited(_shutdownWebView(controller));
     _persistTabsSoon();
     _notify();
+  }
+
+  /// 停掉一个即将被丢弃的 WebView。失败无所谓，视图已经要销毁了。
+  Future<void> _shutdownWebView(WebViewController controller) async {
+    try {
+      await controller.runJavaScript('window.stop();');
+    } catch (_) {}
+    try {
+      await controller.loadRequest(Uri.parse('about:blank'));
+    } catch (_) {}
   }
 
   // ------------------------------------------------------------------ 导航动作
@@ -542,10 +564,10 @@ class BrowserController extends ChangeNotifier {
 
   /// 为标签补建 WebView。页面在首帧调用，避免启动时一次性创建所有实例。
   void ensureTabController(BrowserTab tab) {
-    _ensureController(tab);
+    _ensureController(tab, resume: true);
   }
 
-  WebViewController? _ensureController(BrowserTab tab) {
+  WebViewController? _ensureController(BrowserTab tab, {bool resume = false}) {
     if (!_webViewAvailable) return null;
     final existing = tab.webController;
     if (existing != null) return existing;
@@ -561,12 +583,17 @@ class BrowserController extends ChangeNotifier {
         ..setBackgroundColor(Colors.transparent)
         ..setNavigationDelegate(
           NavigationDelegate(
+            // 下面每个回调都先做一次代际校验：回首页 / 关标签会把
+            // `tab.webController` 置空，属于旧实例的事件不能再去改这个
+            // 标签页的状态，否则界面会被已经废弃的页面拽回去。
             onProgress: (value) {
+              if (!identical(tab.webController, controller)) return;
               tab.progress = value;
               tab.isLoading = value < 100;
               _notify();
             },
             onPageStarted: (url) {
+              if (!identical(tab.webController, controller)) return;
               tab
                 ..isLoading = true
                 ..progress = 0
@@ -579,6 +606,10 @@ class BrowserController extends ChangeNotifier {
               );
             },
             onPageFinished: (url) async {
+              if (!identical(tab.webController, controller)) return;
+              // 上一条导航迟到的回调：用户在 A 没加载完时就打开 B，
+              // A 的 onPageFinished 随后到达，照单全收就会把界面拉回 A。
+              if (!_isCurrentPage(tab, url)) return;
               tab.isLoading = false;
               tab.loadGeneration++;
               if (url.isNotEmpty && !url.startsWith('about:')) {
@@ -590,6 +621,7 @@ class BrowserController extends ChangeNotifier {
               );
               try {
                 final title = await controller.getTitle();
+                if (!identical(tab.webController, controller)) return;
                 if (title != null && title.trim().isNotEmpty) {
                   tab.title = title.trim();
                 }
@@ -598,11 +630,13 @@ class BrowserController extends ChangeNotifier {
                 tab.canGoBack = await controller.canGoBack();
                 tab.canGoForward = await controller.canGoForward();
               } catch (_) {}
+              if (!identical(tab.webController, controller)) return;
               _recordVisit(tab);
               _persistTabsSoon();
               _notify();
             },
             onUrlChange: (change) {
+              if (!identical(tab.webController, controller)) return;
               final url = change.url;
               if (url == null || url.isEmpty) return;
               tab.url = url;
@@ -610,7 +644,9 @@ class BrowserController extends ChangeNotifier {
               _notify();
             },
             onWebResourceError: (error) {
+              if (!identical(tab.webController, controller)) return;
               if (error.isForMainFrame == false) return;
+              if (!_isCurrentPage(tab, error.url)) return;
               tab
                 ..isLoading = false
                 ..errorDescription =
@@ -635,11 +671,59 @@ class BrowserController extends ChangeNotifier {
         ),
       );
       tab.webController = controller;
+      // 标签页恢复 / 从首页切回来时，WebView 是新建的，得把地址补上。
+      if (resume && tab.url.isNotEmpty) {
+        unawaited(_loadCurrentPage(tab, controller));
+      }
       return controller;
     } catch (_) {
       _webViewAvailable = false;
       return null;
     }
+  }
+
+  Future<void> _loadCurrentPage(
+    BrowserTab tab,
+    WebViewController controller,
+  ) async {
+    final uri = Uri.tryParse(tab.url);
+    if (uri == null) return;
+    tab
+      ..isLoading = true
+      ..progress = 0
+      ..errorDescription = null;
+    _notify();
+    try {
+      await controller.loadRequest(uri);
+    } catch (error) {
+      if (!identical(tab.webController, controller)) return;
+      tab
+        ..isLoading = false
+        ..errorDescription = error.toString();
+      _notify();
+    }
+  }
+
+  /// 回调里的地址是不是这个标签页当前要看的页面。
+  ///
+  /// 比较时忽略 fragment 和末尾斜杠——`openAddress('baidu.com')` 规范化后是
+  /// `https://www.baidu.com`，WebView 实际回报的常常是 `https://www.baidu.com/`，
+  /// 不归一化就会被当成「过期回调」全部丢掉，进度条会一直转。
+  static bool _isCurrentPage(BrowserTab tab, String? url) {
+    if (url == null || url.isEmpty || tab.url.isEmpty) return true;
+    if (url == tab.url) return true;
+    return _normalizePageUrl(url) == _normalizePageUrl(tab.url);
+  }
+
+  static String _normalizePageUrl(String raw) {
+    final uri = Uri.tryParse(raw);
+    if (uri == null) return raw;
+    var path = uri.path;
+    if (path.length > 1 && path.endsWith('/')) {
+      path = path.substring(0, path.length - 1);
+    }
+    final port = uri.hasPort ? ':${uri.port}' : '';
+    return '${uri.scheme}://${uri.host}$port$path';
   }
 
   NavigationDecision _handleNavigation(
