@@ -41,7 +41,11 @@ Future<void> showSearchSheet({
     barrierColor: Colors.black.withValues(alpha: 0.35),
     builder: (sheetContext) => PredictiveBackScope(
       style: PredictiveBackStyle.sheet,
-      onCommit: () => Navigator.of(sheetContext).maybePop(),
+      onCommit: () {
+        // 面板已经在侧滑离场了，别再让输入法弹起来把人拽回来。
+        FocusScope.of(sheetContext).unfocus();
+        Navigator.of(sheetContext).maybePop();
+      },
       child: _SearchSheet(controller: controller, useSnapshot: useSnapshot),
     ),
   );
@@ -71,7 +75,11 @@ class _SearchSheetState extends State<_SearchSheet> {
     // 原版 `task(100)` 延后唤起键盘：等 BottomSheet 展开动画结束再抢焦点，
     // 否则 IME 会在动画中途弹出、面板被顶一下。
     Future<void>.delayed(const Duration(milliseconds: 260), () {
-      if (mounted) _focus.requestFocus();
+      if (!mounted) return;
+      // 这 260ms 里用户可能已经侧滑返回了，此时再 requestFocus 会把输入法
+      // 硬弹出来（面板都下去了，键盘还在）。
+      if (PredictiveBackCoordinator.instance.value > 0) return;
+      _focus.requestFocus();
     });
   }
 
@@ -98,6 +106,9 @@ class _SearchSheetState extends State<_SearchSheet> {
   }
 
   void _close() {
+    // 先把焦点放掉再收面板：否则 pop 动画期间 TextField 仍是焦点，
+    // 键盘会在面板退场途中弹出来。
+    FocusScope.of(context).unfocus();
     Navigator.of(context).maybePop();
   }
 

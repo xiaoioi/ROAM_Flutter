@@ -22,9 +22,17 @@ import 'package:flutter/services.dart';
 enum PredictiveBackStyle { horizontal, sheet, dialog }
 
 class PredictiveBackTarget {
-  PredictiveBackTarget(this.onCommit);
+  PredictiveBackTarget(this.onCommit, {this.instantCommit = false});
 
   final VoidCallback onCommit;
+
+  /// 松手时直接归位再执行 [onCommit]，不做「先滑到 1.0 再复位」的收尾。
+  ///
+  /// 网页返回必须这样：内容区是同一个 WebView，滑到 1.0 时上一页已经加载
+  /// 进来了，再等 240ms 复位，看到的就是「新页面先出现在右边、然后瞬移回原位」
+  /// ——也就是那一下闪。
+  final bool instantCommit;
+
   bool enabled = true;
 }
 
@@ -104,6 +112,15 @@ class PredictiveBackCoordinator with WidgetsBindingObserver {
       target.onCommit();
       return;
     }
+
+    // 网页：立刻归位再切页。内容区是同一个 WebView，任何「先滑出去再复位」
+    // 的收尾都会让新页面在偏移位置上闪一下。
+    if (target.instantCommit) {
+      controller.value = 0;
+      target.onCommit();
+      return;
+    }
+
     _settling = true;
     // 先把手势补到 1，让页面/面板先滑出屏幕，再真正 pop，
     // 否则会看到「滑到一半突然归位」的闪动。
@@ -197,6 +214,7 @@ class PredictiveBackScope extends StatefulWidget {
 class _PredictiveBackScopeState extends State<PredictiveBackScope> {
   late final PredictiveBackTarget _target = PredictiveBackTarget(
     () => widget.onCommit(),
+    instantCommit: widget.style == PredictiveBackStyle.horizontal,
   );
 
   @override
@@ -220,50 +238,61 @@ class _PredictiveBackScopeState extends State<PredictiveBackScope> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.enabled) return widget.child;
     final coordinator = PredictiveBackCoordinator.instance;
+    // 这里刻意不因为 `enabled == false` 或 `p == 0` 就换成裸 child。
+    // 一旦结构在「直接 child / 包一层 Stack」之间切换，子树里的
+    // WebView（platform view）就会被重建，表现就是每次手势开始和结束
+    // 都闪一下。结构恒定、只让数值变化，才是最省也最稳的做法。
     return AnimatedBuilder(
       animation: coordinator.animation,
       builder: (context, child) {
         final p = coordinator.animation.value;
-        if (p <= 0.001) return child!;
         switch (widget.style) {
           case PredictiveBackStyle.horizontal:
             // 网页区整体右移，左侧露出的部分是「上一页」的模糊快照。
             // 只做左边缘圆角：右边缘已经滑出屏幕，圆角看不见，反而多一次裁剪。
             final width = MediaQuery.sizeOf(context).width;
-            final shift = p * width * 0.34;
-            final content = Transform.translate(
-              offset: Offset(shift, 0),
-              child: ClipRRect(
-                borderRadius: BorderRadius.horizontal(
-                  left: Radius.circular(24 * p),
-                ),
-                child: child,
-              ),
-            );
             final backdrop = widget.backdrop;
-            if (backdrop == null) return content;
             return Stack(
               clipBehavior: Clip.hardEdge,
               children: [
-                // 背景比手势慢一点：从左侧 4.5% 归位，做出前后层次。
+                // 占位始终保持一个 child，避免 backdrop 出现/消失时
+                // Stack 的 children 数量变化，把下面那块内容重新挂一遍。
+                Positioned.fill(
+                  child: backdrop == null
+                      ? const SizedBox.shrink()
+                      // 背景比手势慢一点：从左侧 4.5% 归位，做出前后层次。
+                      : Transform.translate(
+                          offset: Offset((p - 1) * width * 0.045, 0),
+                          child: backdrop,
+                        ),
+                ),
                 Positioned.fill(
                   child: Transform.translate(
-                    offset: Offset((p - 1) * width * 0.045, 0),
-                    child: backdrop,
+                    offset: Offset(p * width * 0.34, 0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.horizontal(
+                        left: Radius.circular(24 * p),
+                      ),
+                      child: child,
+                    ),
                   ),
                 ),
-                Positioned.fill(child: content),
               ],
             );
           case PredictiveBackStyle.sheet:
+            // 跟手往下走，同时轻微缩小 + 变淡：面板像是「沉」下去，
+            // 而不是一张图直接平移，玻璃的静态感会弱很多。
             final height = MediaQuery.sizeOf(context).height;
             return Transform.translate(
               offset: Offset(0, p * height * 0.55),
-              child: Opacity(
-                opacity: (1 - p * 0.15).clamp(0.0, 1.0),
-                child: child,
+              child: Transform.scale(
+                scale: 1 - 0.04 * p,
+                alignment: Alignment.bottomCenter,
+                child: Opacity(
+                  opacity: (1 - p * 0.12).clamp(0.0, 1.0),
+                  child: child,
+                ),
               ),
             );
           case PredictiveBackStyle.dialog:

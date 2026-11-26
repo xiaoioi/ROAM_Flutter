@@ -55,6 +55,19 @@ class PagePreviewCache {
   final Map<String, _TabPreviews> _tabs = <String, _TabPreviews>{};
   final Map<String, DateTime> _suppressUntil = <String, DateTime>{};
 
+  /// 首页的预览图（Flutter 侧可以直接 `toImage`，不需要走原生）。
+  /// 网页没有可后退的历史时，侧滑露出来的应该是首页，而不是当前网页自己。
+  PagePreview? _home;
+  int _homeRevision = 0;
+
+  PagePreview? get homePreview => _home;
+  int get homeRevision => _homeRevision;
+
+  void recordHome(PagePreview preview) {
+    _home = preview;
+    _homeRevision++;
+  }
+
   _TabPreviews _of(String tabId) => _tabs.putIfAbsent(tabId, _TabPreviews.new);
 
   /// 页面加载完成后记录当前页。
@@ -106,6 +119,8 @@ class PagePreviewCache {
   void clear() {
     _tabs.clear();
     _suppressUntil.clear();
+    _home = null;
+    _homeRevision++;
   }
 
   int get totalBytes {

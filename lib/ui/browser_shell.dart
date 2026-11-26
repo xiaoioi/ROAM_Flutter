@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_miuix/miuix.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -49,6 +50,11 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
   int _backdropRevision = -1;
   Widget? _backdrop;
 
+  /// 每个标签页首页那一层的边界 key，用来拍「首页预览」。
+  final Map<String, GlobalKey> _homeKeys = <String, GlobalKey>{};
+  Timer? _homePreviewTimer;
+  bool _wasHome = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -74,6 +80,7 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
 
   @override
   void dispose() {
+    _homePreviewTimer?.cancel();
     roamRouteObserver.unsubscribe(this);
     super.dispose();
   }
@@ -114,6 +121,16 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
       builder: (context, _) {
         final tab = _controller.activeTab;
         final onHome = tab?.isHome ?? true;
+
+        // 每次「从网页回到首页」都补拍一张首页预览，供侧滑返回时当背景。
+        if (onHome) {
+          if (!_wasHome) {
+            _wasHome = true;
+            _scheduleHomePreview(tab);
+          }
+        } else {
+          _wasHome = false;
+        }
 
         return PopScope(
           // 首页时允许离开（系统会显示「返回桌面」的预测预览），
@@ -195,7 +212,7 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
     final enabled = site != null && !_covered && !onHome;
     Widget? backdrop;
     if (site != null && !_covered && !onHome) {
-      backdrop = _backdropFor(site.id);
+      backdrop = _backdropFor(site);
     }
     return PredictiveBackScope(
       style: PredictiveBackStyle.horizontal,
@@ -211,17 +228,23 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
   /// 这个子树里有一层全屏高斯模糊，重建一次就是一次全屏重绘，所以按
   /// `(tabId, 缓存版本号)` 缓存 widget 实例：手势过程中 [AnimatedBuilder]
   /// 反复重建也不会重新算模糊，只是改一层 Transform。
-  Widget? _backdropFor(String tabId) {
+  ///
+  /// 网页没有可后退的历史时（第一页），退回首页才是真正的「上一页」，
+  /// 所以那里用首页的预览图，而不是当前网页自己的虚影。
+  Widget? _backdropFor(BrowserTab tab) {
     final cache = PagePreviewCache.instance;
-    final revision = cache.revisionOf(tabId);
-    if (_backdropTabId == tabId && _backdropRevision == revision) {
+    final revision = Object.hash(
+      cache.revisionOf(tab.id),
+      cache.homeRevision,
+    );
+    if (_backdropTabId == tab.id && _backdropRevision == revision) {
       return _backdrop;
     }
-    _backdropTabId = tabId;
+    _backdropTabId = tab.id;
     _backdropRevision = revision;
-    // 没有上一页时（新标签的第一页）退化成当前页的虚影：总比露出一块纯色底好，
-    // 视觉上就是「页面被推开，露出自己的虚影」。
-    final preview = cache.previous(tabId) ?? cache.currentOf(tabId);
+    final preview = tab.canGoBack
+        ? (cache.previous(tab.id) ?? cache.currentOf(tab.id))
+        : (cache.homePreview ?? cache.currentOf(tab.id));
     _backdrop = preview == null
         ? null
         : _PageBackdrop(
@@ -231,19 +254,62 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
     return _backdrop;
   }
 
+  void _scheduleHomePreview(BrowserTab? tab) {
+    if (tab == null) return;
+    _homePreviewTimer?.cancel();
+    _homePreviewTimer = Timer(const Duration(milliseconds: 700), () {
+      _homePreviewTimer = null;
+      unawaited(_captureHomePreview(tab));
+    });
+  }
+
+  /// 首页是纯 Flutter 图层，可以直接离屏拍；拍小一点（0.34 倍）当模糊背景足够。
+  Future<void> _captureHomePreview(BrowserTab tab) async {
+    if (!mounted) return;
+    if (_controller.activeTab?.id != tab.id || !tab.isHome) return;
+    final boundary = _homeKeys[tab.id]?.currentContext?.findRenderObject();
+    if (boundary is! RenderRepaintBoundary) return;
+    if (boundary.debugNeedsPaint) {
+      await Future<void>.delayed(const Duration(milliseconds: 160));
+      if (!mounted || boundary.debugNeedsPaint) return;
+    }
+    try {
+      final size = boundary.size;
+      final image = await boundary.toImage(pixelRatio: 0.34);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      if (data == null) return;
+      PagePreviewCache.instance.recordHome(
+        PagePreview(
+          url: 'roam://home',
+          bytes: data.buffer.asUint8List(
+            data.offsetInBytes,
+            data.lengthInBytes,
+          ),
+          aspectRatio: size.width / size.height,
+        ),
+      );
+    } catch (_) {}
+  }
+
   Widget _buildTabs(bool isDark, Brightness brightness) {
     final tabs = _controller.tabs;
     if (tabs.isEmpty) return const SizedBox.shrink();
     final index = _controller.activeIndex.clamp(0, tabs.length - 1);
+    // 关掉的标签页顺手把边界 key 收掉，别一直挂着。
+    _homeKeys.removeWhere((id, _) => !tabs.any((tab) => tab.id == id));
     return IndexedStack(
       index: index,
       children: [
         for (final tab in tabs)
           tab.isHome
-              ? HomePage(
-                  key: ValueKey('home_${tab.id}'),
-                  controller: _controller,
-                  brightness: brightness,
+              ? RepaintBoundary(
+                  key: _homeKeys.putIfAbsent(tab.id, () => GlobalKey()),
+                  child: HomePage(
+                    key: ValueKey('home_${tab.id}'),
+                    controller: _controller,
+                    brightness: brightness,
+                  ),
                 )
               : WebViewHost(
                   key: ValueKey('web_${tab.id}'),
