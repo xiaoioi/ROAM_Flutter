@@ -45,7 +45,20 @@ class PredictiveBackCoordinator with WidgetsBindingObserver {
 
   final List<PredictiveBackTarget> _targets = <PredictiveBackTarget>[];
   AnimationController? _controller;
+
+  /// 正在跟手的目标。
   PredictiveBackTarget? _active;
+
+  /// 当前**有权使用** 0..1 进度的目标。
+  ///
+  /// 进度是全局唯一的一个 controller，如果所有 scope 都直接读它，就会出现
+  /// 「弹层松手后进度还在 1.0，弹层 pop 掉、主界面重新变成栈顶」的瞬间，
+  /// 主界面拿着 1.0 立刻把网页推开 34% 再慢慢复位——也就是「关弹窗时
+  /// 网页/主页跟着动」。
+  ///
+  /// 所以进度必须带归属：只有这个字段指向的 scope 才读到非 0 的值，
+  /// 别的 scope 一律按 0 渲染（结构不变，只是数值）。
+  PredictiveBackTarget? _animating;
   bool _observing = false;
   bool _settling = false;
 
@@ -54,6 +67,9 @@ class PredictiveBackCoordinator with WidgetsBindingObserver {
       _controller ?? const AlwaysStoppedAnimation<double>(0);
 
   double get value => _controller?.value ?? 0;
+
+  /// 这个 scope 现在该不该跟着进度动。
+  bool drives(PredictiveBackTarget target) => identical(_animating, target);
 
   void attach(AnimationController controller) {
     _controller = controller;
@@ -76,6 +92,9 @@ class PredictiveBackCoordinator with WidgetsBindingObserver {
   void unbind(PredictiveBackTarget target) {
     _targets.remove(target);
     if (identical(_active, target)) _active = null;
+    // 弹层 pop 掉以后立刻交接：进度可能还停在 1.0 等复位，
+    // 但下层界面不该继承这个偏移。
+    if (identical(_animating, target)) _animating = null;
   }
 
   PredictiveBackTarget? get _top {
@@ -92,6 +111,7 @@ class PredictiveBackCoordinator with WidgetsBindingObserver {
     final target = _top;
     if (target == null) return false;
     _active = target;
+    _animating = target;
     controller.value = backEvent.progress;
     return true;
   }
@@ -117,6 +137,7 @@ class PredictiveBackCoordinator with WidgetsBindingObserver {
     // 的收尾都会让新页面在偏移位置上闪一下。
     if (target.instantCommit) {
       controller.value = 0;
+      _animating = null;
       target.onCommit();
       return;
     }
@@ -137,6 +158,7 @@ class PredictiveBackCoordinator with WidgetsBindingObserver {
             if (_controller == controller) {
               controller.value = 0;
               _settling = false;
+              if (identical(_animating, target)) _animating = null;
             }
           });
         });
@@ -145,11 +167,17 @@ class PredictiveBackCoordinator with WidgetsBindingObserver {
   @override
   void handleCancelBackGesture() {
     _active = null;
-    _controller?.animateBack(
-      0,
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOutCubic,
-    );
+    final target = _animating;
+    final controller = _controller;
+    controller
+        ?.animateBack(
+          0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+        )
+        .whenComplete(() {
+          if (identical(_animating, target)) _animating = null;
+        });
   }
 }
 
@@ -246,7 +274,9 @@ class _PredictiveBackScopeState extends State<PredictiveBackScope> {
     return AnimatedBuilder(
       animation: coordinator.animation,
       builder: (context, child) {
-        final p = coordinator.animation.value;
+        // 进度带归属：这次手势不是我在跟，就按 0 画。
+        // 否则弹层 pop 掉、进度还没归零的那一瞬间，下层网页会跟着一起被推开。
+        final p = coordinator.drives(_target) ? coordinator.animation.value : 0.0;
         switch (widget.style) {
           case PredictiveBackStyle.horizontal:
             // 网页区整体右移，左侧露出的部分是「上一页」的模糊快照。
@@ -281,18 +311,19 @@ class _PredictiveBackScopeState extends State<PredictiveBackScope> {
               ],
             );
           case PredictiveBackStyle.sheet:
-            // 跟手往下走，同时轻微缩小 + 变淡：面板像是「沉」下去，
-            // 而不是一张图直接平移，玻璃的静态感会弱很多。
+            // 跟手往下走，同时以底边为锚轻微缩小：面板像是「沉」下去，
+            // 而不是一张图直接平移。
+            //
+            // 这里刻意不用 Opacity：它会把整块面板（含玻璃 shader 的绘制结果）
+            // 缓存成一层纹理，之后面板再被别的布局位移带走时，玻璃里的背景
+            // 就停在原处不刷新，看起来像贴纸。
             final height = MediaQuery.sizeOf(context).height;
             return Transform.translate(
               offset: Offset(0, p * height * 0.55),
               child: Transform.scale(
-                scale: 1 - 0.04 * p,
+                scale: 1 - 0.03 * p,
                 alignment: Alignment.bottomCenter,
-                child: Opacity(
-                  opacity: (1 - p * 0.12).clamp(0.0, 1.0),
-                  child: child,
-                ),
+                child: child,
               ),
             );
           case PredictiveBackStyle.dialog:

@@ -4,7 +4,6 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_miuix/miuix.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -45,15 +44,16 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
   bool _covered = false;
   PageRoute<void>? _route;
 
-  /// [_backdropFor] 的一格缓存。
+  /// [_backdropFor] 的一格缓存：手势过程中反复取用同一个 widget 实例。
   String? _backdropTabId;
   int _backdropRevision = -1;
   Widget? _backdrop;
 
-  /// 每个标签页首页那一层的边界 key，用来拍「首页预览」。
-  final Map<String, GlobalKey> _homeKeys = <String, GlobalKey>{};
-  Timer? _homePreviewTimer;
-  bool _wasHome = false;
+  /// 主界面要同时跟两种变化：标签状态、以及异步到达的页面快照。
+  late final Listenable _repaint = Listenable.merge(<Listenable>[
+    widget.controller,
+    PagePreviewCache.instance,
+  ]);
 
   @override
   void didChangeDependencies() {
@@ -80,7 +80,6 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
 
   @override
   void dispose() {
-    _homePreviewTimer?.cancel();
     roamRouteObserver.unsubscribe(this);
     super.dispose();
   }
@@ -117,20 +116,12 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
     final isDark = brightness == Brightness.dark;
 
     return AnimatedBuilder(
-      animation: _controller,
+      // 也监听快照缓存：抓图是异步的，新的一张「上一页」到了要立刻换背景，
+      // 否则侧滑时铺的还是旧的模糊图。
+      animation: _repaint,
       builder: (context, _) {
         final tab = _controller.activeTab;
         final onHome = tab?.isHome ?? true;
-
-        // 每次「从网页回到首页」都补拍一张首页预览，供侧滑返回时当背景。
-        if (onHome) {
-          if (!_wasHome) {
-            _wasHome = true;
-            _scheduleHomePreview(tab);
-          }
-        } else {
-          _wasHome = false;
-        }
 
         return PopScope(
           // 首页时允许离开（系统会显示「返回桌面」的预测预览），
@@ -164,7 +155,7 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
                     // 只有网页区参与侧滑动画：顶栏、进度条、底栏原地不动，
                     // 跟原生浏览器「内容区退场、外壳不动」的表现一致。
                     Expanded(
-                      child: _buildPageArea(tab, isDark, brightness, onHome),
+                      child: _buildPageArea(tab, isDark, brightness),
                     ),
                     _RoamBottomBar(
                       isDark: isDark,
@@ -206,18 +197,13 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
     BrowserTab? tab,
     bool isDark,
     Brightness brightness,
-    bool onHome,
   ) {
     final site = tab;
-    final enabled = site != null && !_covered && !onHome;
-    Widget? backdrop;
-    if (site != null && !_covered && !onHome) {
-      backdrop = _backdropFor(site);
-    }
+    final enabled = site != null && !_covered && !site.isHome;
     return PredictiveBackScope(
       style: PredictiveBackStyle.horizontal,
       enabled: enabled,
-      backdrop: backdrop,
+      backdrop: enabled ? _backdropFor(site) : null,
       onCommit: () => unawaited(_handleSystemBack()),
       child: _buildTabs(isDark, brightness),
     );
@@ -225,26 +211,23 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
 
   /// 上一页的模糊快照层。
   ///
-  /// 这个子树里有一层全屏高斯模糊，重建一次就是一次全屏重绘，所以按
-  /// `(tabId, 缓存版本号)` 缓存 widget 实例：手势过程中 [AnimatedBuilder]
-  /// 反复重建也不会重新算模糊，只是改一层 Transform。
+  /// 没有上一页（新标签的第一页，退回去就是首页）时返回 null：按需求这里
+  /// 什么都不铺，露出页面底色即可。早先拿首页快照兜底的版本有两个副作用——
+  /// 一是首页快照是延时拍的，二是它让 `revision` 跟着首页变化，网页到网页
+  /// 的模糊反而不能及时刷新。
   ///
-  /// 网页没有可后退的历史时（第一页），退回首页才是真正的「上一页」，
-  /// 所以那里用首页的预览图，而不是当前网页自己的虚影。
+  /// 这个子树里有一层全屏高斯模糊，重建一次就是一次全屏重绘，所以按
+  /// `(tabId, 快照版本号)` 缓存 widget 实例：手势过程中 [AnimatedBuilder]
+  /// 反复重建也不会重新算模糊，只是改一层 Transform。
   Widget? _backdropFor(BrowserTab tab) {
     final cache = PagePreviewCache.instance;
-    final revision = Object.hash(
-      cache.revisionOf(tab.id),
-      cache.homeRevision,
-    );
+    final revision = cache.revisionOf(tab.id);
     if (_backdropTabId == tab.id && _backdropRevision == revision) {
       return _backdrop;
     }
+    final preview = cache.previous(tab.id);
     _backdropTabId = tab.id;
     _backdropRevision = revision;
-    final preview = tab.canGoBack
-        ? (cache.previous(tab.id) ?? cache.currentOf(tab.id))
-        : (cache.homePreview ?? cache.currentOf(tab.id));
     _backdrop = preview == null
         ? null
         : _PageBackdrop(
@@ -254,62 +237,19 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
     return _backdrop;
   }
 
-  void _scheduleHomePreview(BrowserTab? tab) {
-    if (tab == null) return;
-    _homePreviewTimer?.cancel();
-    _homePreviewTimer = Timer(const Duration(milliseconds: 700), () {
-      _homePreviewTimer = null;
-      unawaited(_captureHomePreview(tab));
-    });
-  }
-
-  /// 首页是纯 Flutter 图层，可以直接离屏拍；拍小一点（0.34 倍）当模糊背景足够。
-  Future<void> _captureHomePreview(BrowserTab tab) async {
-    if (!mounted) return;
-    if (_controller.activeTab?.id != tab.id || !tab.isHome) return;
-    final boundary = _homeKeys[tab.id]?.currentContext?.findRenderObject();
-    if (boundary is! RenderRepaintBoundary) return;
-    if (boundary.debugNeedsPaint) {
-      await Future<void>.delayed(const Duration(milliseconds: 160));
-      if (!mounted || boundary.debugNeedsPaint) return;
-    }
-    try {
-      final size = boundary.size;
-      final image = await boundary.toImage(pixelRatio: 0.34);
-      final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      image.dispose();
-      if (data == null) return;
-      PagePreviewCache.instance.recordHome(
-        PagePreview(
-          url: 'roam://home',
-          bytes: data.buffer.asUint8List(
-            data.offsetInBytes,
-            data.lengthInBytes,
-          ),
-          aspectRatio: size.width / size.height,
-        ),
-      );
-    } catch (_) {}
-  }
-
   Widget _buildTabs(bool isDark, Brightness brightness) {
     final tabs = _controller.tabs;
     if (tabs.isEmpty) return const SizedBox.shrink();
     final index = _controller.activeIndex.clamp(0, tabs.length - 1);
-    // 关掉的标签页顺手把边界 key 收掉，别一直挂着。
-    _homeKeys.removeWhere((id, _) => !tabs.any((tab) => tab.id == id));
     return IndexedStack(
       index: index,
       children: [
         for (final tab in tabs)
           tab.isHome
-              ? RepaintBoundary(
-                  key: _homeKeys.putIfAbsent(tab.id, () => GlobalKey()),
-                  child: HomePage(
-                    key: ValueKey('home_${tab.id}'),
-                    controller: _controller,
-                    brightness: brightness,
-                  ),
+              ? HomePage(
+                  key: ValueKey('home_${tab.id}'),
+                  controller: _controller,
+                  brightness: brightness,
                 )
               : WebViewHost(
                   key: ValueKey('web_${tab.id}'),
@@ -618,10 +558,13 @@ class _WebViewHostState extends State<WebViewHost> {
         devicePixelRatio: ratio,
       );
       if (bytes == null || !mounted) return;
+      final tone = await _analyzeTone(bytes);
       final preview = PagePreview(
         url: tab.url,
         bytes: bytes,
         aspectRatio: size.width / size.height,
+        averageColor: tone.color,
+        flatness: tone.flatness,
       );
       PagePreviewCache.instance.record(tab.id, preview);
       // 提前解码，手势开始时第一帧就能画出来，不然会闪一下空白。
@@ -630,6 +573,55 @@ class _WebViewHostState extends State<WebViewHost> {
       } catch (_) {}
     } finally {
       _capturing = false;
+    }
+  }
+
+  /// 量一下快照的整体色调：平均色 + 「有多接近纯色」。
+  ///
+  /// 白底文档模糊之后会糊成灰雾，看起来像把白底换掉了；有了这两个值，
+  /// 背景层就能先用平均色打底、再按纯度决定模糊图叠多浓。
+  /// 解码到 12px 宽再统计，几毫秒的事，而且只发生在加载完成之后。
+  Future<({Color color, double flatness})> _analyzeTone(Uint8List bytes) async {
+    ui.Codec? codec;
+    ui.Image? image;
+    try {
+      codec = await ui.instantiateImageCodec(bytes, targetWidth: 12);
+      final frame = await codec.getNextFrame();
+      image = frame.image;
+      final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (data == null) return (color: const Color(0xFFFFFFFF), flatness: 0.0);
+      final px = data.buffer.asUint8List();
+      final count = image.width * image.height;
+      if (count <= 0) return (color: const Color(0xFFFFFFFF), flatness: 0.0);
+      var r = 0;
+      var g = 0;
+      var b = 0;
+      for (var i = 0; i < count; i++) {
+        r += px[i * 4];
+        g += px[i * 4 + 1];
+        b += px[i * 4 + 2];
+      }
+      final ar = r / count;
+      final ag = g / count;
+      final ab = b / count;
+      var deviation = 0.0;
+      for (var i = 0; i < count; i++) {
+        deviation += (px[i * 4] - ar).abs() +
+            (px[i * 4 + 1] - ag).abs() +
+            (px[i * 4 + 2] - ab).abs();
+      }
+      deviation /= count * 3;
+      // 平均偏离 40 级（≈16%）就算完全「花」了；越小越接近纯色。
+      final flatness = (1 - deviation / 40).clamp(0.0, 1.0);
+      return (
+        color: Color.fromARGB(255, ar.round(), ag.round(), ab.round()),
+        flatness: flatness.toDouble(),
+      );
+    } catch (_) {
+      return (color: const Color(0xFFFFFFFF), flatness: 0.0);
+    } finally {
+      image?.dispose();
+      codec?.dispose();
     }
   }
 
@@ -674,6 +666,10 @@ class _WebViewHostState extends State<WebViewHost> {
 /// 快照本身只有 480px 宽，`FilterQuality.low` 放大已经自带柔化，再叠一层
 /// 高斯模糊，看起来就是原生浏览器把上一页压在后面的效果。
 ///
+/// 白底页面是个例外：白底 + 深色文字模糊之后会整片糊成灰雾，「白底被换成
+/// 了灰色」。所以先用快照的平均色打底，模糊图按 [PagePreview.flatness]
+/// 决定叠多浓——越是纯色，越接近一块干净底色。
+///
 /// 整个子树放在 [RepaintBoundary] 里：手势过程中只有外层 Transform 在变，
 /// 模糊结果缓存成一层，不会每帧重算。
 class _PageBackdrop extends StatelessWidget {
@@ -683,26 +679,30 @@ class _PageBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // 纯色页（白底文档、纯黑夜间模式）直接铺平均色，一点模糊都不加。
+    final textureAlpha = (0.72 * (1 - preview.flatness)).clamp(0.0, 0.72);
     return ColoredBox(
-      color: isDark ? Colors.black : RoamColors.daySky,
+      color: preview.averageColor,
       child: RepaintBoundary(
         child: ClipRect(
           // 1.12 倍是留给外层视差位移的余量，同时补掉模糊采样到边界外的半透明。
           child: Transform.scale(
             scale: 1.12,
-            child: ImageFiltered(
-              imageFilter: ui.ImageFilter.blur(
-                sigmaX: 18,
-                sigmaY: 18,
-                tileMode: ui.TileMode.decal,
-              ),
-              child: Image.memory(
-                preview.bytes,
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.low,
-                gaplessPlayback: true,
-                excludeFromSemantics: true,
+            child: Opacity(
+              opacity: textureAlpha,
+              child: ImageFiltered(
+                imageFilter: ui.ImageFilter.blur(
+                  sigmaX: 18,
+                  sigmaY: 18,
+                  tileMode: ui.TileMode.decal,
+                ),
+                child: Image.memory(
+                  preview.bytes,
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.low,
+                  gaplessPlayback: true,
+                  excludeFromSemantics: true,
+                ),
               ),
             ),
           ),

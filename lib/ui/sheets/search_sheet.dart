@@ -8,6 +8,7 @@ import 'package:flutter_miuix/miuix.dart';
 
 import '../../models/browser_models.dart';
 import '../../state/browser_controller.dart';
+import '../glass/layout_motion_repaint.dart';
 import '../glass/os4_glass_token.dart';
 import '../glass/roam_glass.dart';
 import '../glass/roam_glass_bridge.dart';
@@ -520,9 +521,13 @@ class _SheetGlass extends StatelessWidget {
     const corner = BorderRadius.vertical(top: Radius.circular(28));
     const shape = MiuixGlassShape(borderRadius: corner);
 
-    return ListenableBuilder(
-      listenable: GlassRuntime.repaint,
-      builder: (context, _) {
+    // 面板被 BottomSheet 的拖拽 / 预测式返回的 Transform 带走时，
+    // 子树自己不会重绘，玻璃里的背景会「钉」在原地。这个包装把它
+    // 变成一次重绘信号。
+    return LayoutMotionRepaint(
+      child: ListenableBuilder(
+        listenable: GlassRuntime.repaint,
+        builder: (context, _) {
         final customGlass = GlassRuntime.customGlass.value;
 
         // 网页 tab：WebView 是 platform view，离屏快照里没有像素，
@@ -572,7 +577,8 @@ class _SheetGlass extends StatelessWidget {
           shape: shape,
           child: tinted,
         );
-      },
+        },
+      ),
     );
   }
 }

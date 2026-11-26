@@ -1,3 +1,5 @@
+import 'dart:ui' show Color;
+
 import 'package:flutter/foundation.dart';
 
 /// 一个页面的低分辨率快照。
@@ -12,6 +14,8 @@ class PagePreview {
     required this.url,
     required this.bytes,
     required this.aspectRatio,
+    this.averageColor = const Color(0xFFFFFFFF),
+    this.flatness = 0,
   });
 
   final String url;
@@ -21,6 +25,14 @@ class PagePreview {
 
   /// 宽 / 高，背景按这个比例铺满。
   final double aspectRatio;
+
+  /// 整张图的平均色。白底页面模糊之后会糊成一片灰雾，
+  /// 拿平均色打底再让模糊图半透明叠上去，亮度才不会跑偏。
+  final Color averageColor;
+
+  /// 画面「接近纯色」的程度，0（花）~ 1（纯色）。
+  /// 纯白页 / 纯黑页模糊后毫无意义，直接用平均色。
+  final double flatness;
 
   int get sizeInBytes => bytes.lengthInBytes;
 }
@@ -37,7 +49,10 @@ class _TabPreviews {
 /// * 页面加载完成 → [record] 当前页；若 URL 变了，上一张压进 back 栈；
 /// * 手势开始 → [previous] 拿到栈顶，作为平移动画露出来的背景；
 /// * 手势提交、真的后退了 → [consumeBack] 弹掉栈顶，避免下一次加载重复入栈。
-class PagePreviewCache {
+///
+/// 自己就是一个 [ChangeNotifier]：抓图是异步的，UI 必须知道「新的上一页
+/// 到了」，否则侧滑时铺的还是上一张旧图（模糊不及时刷新）。
+class PagePreviewCache extends ChangeNotifier {
   PagePreviewCache._();
 
   static final PagePreviewCache instance = PagePreviewCache._();
@@ -54,19 +69,6 @@ class PagePreviewCache {
 
   final Map<String, _TabPreviews> _tabs = <String, _TabPreviews>{};
   final Map<String, DateTime> _suppressUntil = <String, DateTime>{};
-
-  /// 首页的预览图（Flutter 侧可以直接 `toImage`，不需要走原生）。
-  /// 网页没有可后退的历史时，侧滑露出来的应该是首页，而不是当前网页自己。
-  PagePreview? _home;
-  int _homeRevision = 0;
-
-  PagePreview? get homePreview => _home;
-  int get homeRevision => _homeRevision;
-
-  void recordHome(PagePreview preview) {
-    _home = preview;
-    _homeRevision++;
-  }
 
   _TabPreviews _of(String tabId) => _tabs.putIfAbsent(tabId, _TabPreviews.new);
 
@@ -87,12 +89,16 @@ class PagePreviewCache {
     state.current = preview;
     state.revision++;
     _trim();
+    notifyListeners();
   }
 
-  /// 当前页的快照（用于判断是否还缺一张，也用作没有上一页时的兜底背景）。
+  /// 当前页的快照。
   PagePreview? currentOf(String tabId) => _tabs[tabId]?.current;
 
   /// 手势开始时要显示的「上一页」。
+  ///
+  /// 没有历史（第一页，退回去就是首页）时返回 null——上层据此显示空白，
+  /// 而不是拿当前页或首页的图凑数。
   PagePreview? previous(String tabId) {
     final state = _tabs[tabId];
     if (state == null || state.back.isEmpty) return null;
@@ -106,21 +112,31 @@ class PagePreviewCache {
     state.back.removeLast();
     _suppressUntil[tabId] = DateTime.now().add(_suppressWindow);
     state.revision++;
+    notifyListeners();
   }
 
   /// 背景图缓存版本号；UI 用它判断要不要重建模糊层。
   int revisionOf(String tabId) => _tabs[tabId]?.revision ?? 0;
 
   void drop(String tabId) {
-    _tabs.remove(tabId);
+    final changed = _tabs.remove(tabId) != null;
     _suppressUntil.remove(tabId);
+    if (changed) notifyListeners();
   }
 
+  /// 清空全部快照（清历史时一起丢）。
   void clear() {
+    if (_tabs.isEmpty) return;
     _tabs.clear();
     _suppressUntil.clear();
-    _home = null;
-    _homeRevision++;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _tabs.clear();
+    _suppressUntil.clear();
+    super.dispose();
   }
 
   int get totalBytes {
