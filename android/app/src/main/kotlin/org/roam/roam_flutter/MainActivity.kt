@@ -7,18 +7,29 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Rect
 import android.net.Uri
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.provider.Settings
+import android.view.PixelCopy
+import android.view.View
+import android.view.ViewGroup
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 
 class MainActivity : FlutterActivity() {
     private val channelName = "org.roam.roam_flutter/photo_picker"
     private val systemChannelName = "org.roam.roam_flutter/system"
+    private val snapshotChannelName = "org.roam.roam_flutter/page_snapshot"
     private var pendingResult: MethodChannel.Result? = null
     private var permissionResult: MethodChannel.Result? = null
 
@@ -79,6 +90,190 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        // 网页预览图：预测式返回时拿它当「上一页」的背景。
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, snapshotChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "capture" -> {
+                        val x = call.argument<Int>("x") ?: 0
+                        val y = call.argument<Int>("y") ?: 0
+                        val w = call.argument<Int>("width") ?: 0
+                        val h = call.argument<Int>("height") ?: 0
+                        val target = call.argument<Int>("targetWidth") ?: 480
+                        capturePageSnapshot(x, y, w, h, target) { bytes ->
+                            runOnUiThread { result.success(bytes) }
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    // ------------------------------------------------------------ 网页预览图
+
+    /**
+     * 抓一块窗口区域，缩到 [targetWidth] 宽、压成 JPEG 返回。
+     *
+     * WebView 在 Flutter 里是 platform view，Dart 侧的 `toImage()` 拿不到它的
+     * 内容，只能在这里抓。优先 [PixelCopy]（读的是窗口合成后的真实像素），
+     * 拿不到再退到「遍历视图树找 WebView，把它 draw 进一张缩小的 Bitmap」。
+     */
+    private fun capturePageSnapshot(
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        targetWidth: Int,
+        done: (ByteArray?) -> Unit,
+    ) {
+        if (width <= 0 || height <= 0) {
+            done(null)
+            return
+        }
+        val outWidth = targetWidth.coerceIn(160, 720)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            copyWindowRegion(x, y, width, height, outWidth) { bytes ->
+                if (bytes != null) done(bytes) else done(drawWebView(outWidth))
+            }
+        } else {
+            done(drawWebView(outWidth))
+        }
+    }
+
+    private fun copyWindowRegion(
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        outWidth: Int,
+        done: (ByteArray?) -> Unit,
+    ) {
+        val decor = window?.decorView
+        val flutterView = decor?.let { findFlutterView(it) }
+        if (decor == null || flutterView == null) {
+            done(null)
+            return
+        }
+        // Flutter 的 global 坐标以 FlutterView 左上角为原点，PixelCopy 要的是
+        // 窗口坐标，这里补上 FlutterView 在窗口里的偏移。
+        val location = IntArray(2)
+        flutterView.getLocationInWindow(location)
+        val left = (location[0] + x).coerceAtLeast(0)
+        val top = (location[1] + y).coerceAtLeast(0)
+        val right = (location[0] + x + width).coerceAtMost(decor.width)
+        val bottom = (location[1] + y + height).coerceAtMost(decor.height)
+        if (right - left < 16 || bottom - top < 16) {
+            done(null)
+            return
+        }
+
+        val src = Rect(left, top, right, bottom)
+        val bitmap = try {
+            Bitmap.createBitmap(src.width(), src.height(), Bitmap.Config.ARGB_8888)
+        } catch (e: Throwable) {
+            done(null)
+            return
+        }
+        try {
+            PixelCopy.request(
+                window,
+                src,
+                bitmap,
+                { copyResult ->
+                    if (copyResult == PixelCopy.SUCCESS) {
+                        done(compressSnapshot(bitmap, outWidth))
+                    } else {
+                        done(null)
+                    }
+                },
+                Handler(Looper.getMainLooper()),
+            )
+        } catch (e: Throwable) {
+            done(null)
+        }
+    }
+
+    private fun drawWebView(outWidth: Int): ByteArray? {
+        val webView = findVisibleWebView() ?: return null
+        val sourceWidth = webView.width
+        val sourceHeight = webView.height
+        if (sourceWidth <= 0 || sourceHeight <= 0) return null
+        val outHeight = (outWidth.toFloat() * sourceHeight / sourceWidth).toInt().coerceAtLeast(1)
+        return try {
+            val bitmap = Bitmap.createBitmap(outWidth, outHeight, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val scale = outWidth.toFloat() / sourceWidth
+            canvas.scale(scale, scale)
+            webView.draw(canvas)
+            compressSnapshot(bitmap, outWidth)
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    private fun compressSnapshot(bitmap: Bitmap, outWidth: Int): ByteArray? {
+        return try {
+            val scaled = if (bitmap.width == outWidth) {
+                bitmap
+            } else {
+                val h = (outWidth.toFloat() * bitmap.height / bitmap.width).toInt().coerceAtLeast(1)
+                Bitmap.createScaledBitmap(bitmap, outWidth, h, true)
+            }
+            val stream = ByteArrayOutputStream()
+            // 反正要糊掉，质量压低一点，一张图 20~40KB。
+            scaled.compress(Bitmap.CompressFormat.JPEG, 52, stream)
+            val bytes = stream.toByteArray()
+            stream.close()
+            if (!scaled.isRecycled) scaled.recycle()
+            if (scaled !== bitmap && !bitmap.isRecycled) bitmap.recycle()
+            bytes
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    private fun findFlutterView(root: View): View? {
+        if (root is io.flutter.embedding.android.FlutterView) return root
+        if (root is ViewGroup) {
+            for (index in 0 until root.childCount) {
+                findFlutterView(root.getChildAt(index))?.let { return it }
+            }
+        }
+        return null
+    }
+
+    /** 视图树里可能有多个 WebView（多标签），取当前可见、面积最大的那个。 */
+    @Suppress("DEPRECATION")
+    private fun findVisibleWebView(): android.webkit.WebView? {
+        val decor = window?.decorView ?: return null
+        val candidates = ArrayList<android.webkit.WebView>()
+        collectWebViews(decor, candidates)
+        var best: android.webkit.WebView? = null
+        var bestArea = 0
+        val rect = Rect()
+        for (view in candidates) {
+            if (!view.isShown) continue
+            if (!view.getGlobalVisibleRect(rect)) continue
+            val area = rect.width() * rect.height()
+            if (area > bestArea) {
+                bestArea = area
+                best = view
+            }
+        }
+        return best
+    }
+
+    private fun collectWebViews(root: View, out: MutableList<android.webkit.WebView>) {
+        if (root is android.webkit.WebView) {
+            out.add(root)
+            return
+        }
+        if (root is ViewGroup) {
+            for (index in 0 until root.childCount) {
+                collectWebViews(root.getChildAt(index), out)
+            }
+        }
     }
 
     /**

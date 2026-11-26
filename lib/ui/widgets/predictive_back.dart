@@ -11,7 +11,8 @@ import 'package:flutter/services.dart';
 /// [WidgetsBindingObserver.handleStartBackGesture] 抢下手势，把系统给的
 /// 0..1 进度映射成位移，做出跟手的返回动画：
 ///
-/// * [PredictiveBackStyle.horizontal]：网页整体横向平移，露出的部分留给背景；
+/// * [PredictiveBackStyle.horizontal]：内容整体横向平移，露出的部分铺
+///   [PredictiveBackScope.backdrop]（网页的上一页模糊快照）；
 /// * [PredictiveBackStyle.sheet]：底部面板随手下移；
 /// * [PredictiveBackStyle.dialog]：对话框缩小淡出。
 ///
@@ -170,6 +171,9 @@ class _PredictiveBackHostState extends State<PredictiveBackHost>
 }
 
 /// 让子树接入预测式返回：侧滑时跟手位移，松手调用 [onCommit]。
+///
+/// [backdrop] 只在 [PredictiveBackStyle.horizontal] 下生效：内容平移后露出来
+/// 的那一侧铺什么。传 null 就露出下层本来有的东西（页面底色）。
 class PredictiveBackScope extends StatefulWidget {
   const PredictiveBackScope({
     super.key,
@@ -177,12 +181,14 @@ class PredictiveBackScope extends StatefulWidget {
     required this.onCommit,
     this.style = PredictiveBackStyle.sheet,
     this.enabled = true,
+    this.backdrop,
   });
 
   final Widget child;
   final VoidCallback onCommit;
   final PredictiveBackStyle style;
   final bool enabled;
+  final Widget? backdrop;
 
   @override
   State<PredictiveBackScope> createState() => _PredictiveBackScopeState();
@@ -223,13 +229,33 @@ class _PredictiveBackScopeState extends State<PredictiveBackScope> {
         if (p <= 0.001) return child!;
         switch (widget.style) {
           case PredictiveBackStyle.horizontal:
+            // 网页区整体右移，左侧露出的部分是「上一页」的模糊快照。
+            // 只做左边缘圆角：右边缘已经滑出屏幕，圆角看不见，反而多一次裁剪。
             final width = MediaQuery.sizeOf(context).width;
-            return Transform.translate(
-              offset: Offset(p * width * 0.34, 0),
+            final shift = p * width * 0.34;
+            final content = Transform.translate(
+              offset: Offset(shift, 0),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(22 * p),
+                borderRadius: BorderRadius.horizontal(
+                  left: Radius.circular(24 * p),
+                ),
                 child: child,
               ),
+            );
+            final backdrop = widget.backdrop;
+            if (backdrop == null) return content;
+            return Stack(
+              clipBehavior: Clip.hardEdge,
+              children: [
+                // 背景比手势慢一点：从左侧 4.5% 归位，做出前后层次。
+                Positioned.fill(
+                  child: Transform.translate(
+                    offset: Offset((p - 1) * width * 0.045, 0),
+                    child: backdrop,
+                  ),
+                ),
+                Positioned.fill(child: content),
+              ],
             );
           case PredictiveBackStyle.sheet:
             final height = MediaQuery.sizeOf(context).height;

@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use
 
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,8 @@ import 'package:flutter_miuix/miuix.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/browser_models.dart';
+import '../services/page_preview_cache.dart';
+import '../services/page_snapshot.dart';
 import '../state/browser_controller.dart';
 import '../theme/roam_theme.dart';
 import 'app_route_observer.dart';
@@ -40,6 +43,11 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
   /// 预测式返回要让给它们自己的转场，主界面不能抢手势。
   bool _covered = false;
   PageRoute<void>? _route;
+
+  /// [_backdropFor] 的一格缓存。
+  String? _backdropTabId;
+  int _backdropRevision = -1;
+  Widget? _backdrop;
 
   @override
   void didChangeDependencies() {
@@ -107,51 +115,48 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
         final tab = _controller.activeTab;
         final onHome = tab?.isHome ?? true;
 
-        return PredictiveBackScope(
-          style: PredictiveBackStyle.horizontal,
-          // 首页侧滑交给系统退出（带「返回桌面」预览）；
-          // 被设置页 / 弹层盖住时让出，避免抢它们的手势。
-          enabled: !_covered && !onHome,
-          onCommit: () => unawaited(_handleSystemBack()),
-          child: PopScope(
-            // 首页时允许离开（系统会显示「返回桌面」的预测预览），
-            // 网页页禁止直接 pop：系统返回 / 侧滑先落到网页历史上，
-            // 回不去了才回首页，避免侧滑一下就把整个浏览器关掉。
-            canPop: tab == null || tab.isHome,
-            onPopInvokedWithResult: (didPop, _) {
-              if (didPop) return;
-              unawaited(_handleSystemBack());
-            },
-            child: SitePermissionHost(
-              child: Scaffold(
-                backgroundColor: isDark ? Colors.black : RoamColors.daySky,
-                resizeToAvoidBottomInset: true,
-                // 全局背景捕获：只包页面内容（顶栏/进度条/标签内容/底栏）。
-                // 工具栏、标签页等 modal 弹层走 Navigator 压栈，在本子树之外，
-                // 因此它们采样到的是「下层页面的最终画面」，不会自采样。
-                // 页面内部的玻璃（HomePage/设置页）各自持有局部捕获器，
-                // 不读这两个全局快照，避免玻璃把自己叠进背景（反馈循环）。
-                body: MiuixLayerBackdropCapture(
-                  backdrop: miuixBackdrop,
-                  child: Column(
-                    children: [
-                      _RoamTopBar(
-                        isDark: isDark,
-                        title: onHome ? '' : _titleOf(tab!),
-                        onNewTab: _openTabs,
-                        onTapTitle: _openSearch,
-                      ),
-                      _RoamProgress(tab: tab),
-                      Expanded(child: _buildTabs(isDark, brightness)),
-                      _RoamBottomBar(
-                        isDark: isDark,
-                        tab: tab,
-                        controller: _controller,
-                        onMenu: _openMenu,
-                        onTabs: _openTabs,
-                      ),
-                    ],
-                  ),
+        return PopScope(
+          // 首页时允许离开（系统会显示「返回桌面」的预测预览），
+          // 网页页禁止直接 pop：系统返回 / 侧滑先落到网页历史上，
+          // 回不去了才回首页，避免侧滑一下就把整个浏览器关掉。
+          canPop: tab == null || tab.isHome,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            unawaited(_handleSystemBack());
+          },
+          child: SitePermissionHost(
+            child: Scaffold(
+              backgroundColor: isDark ? Colors.black : RoamColors.daySky,
+              resizeToAvoidBottomInset: true,
+              // 全局背景捕获：只包页面内容（顶栏/进度条/标签内容/底栏）。
+              // 工具栏、标签页等 modal 弹层走 Navigator 压栈，在本子树之外，
+              // 因此它们采样到的是「下层页面的最终画面」，不会自采样。
+              // 页面内部的玻璃（HomePage/设置页）各自持有局部捕获器，
+              // 不读这两个全局快照，避免玻璃把自己叠进背景（反馈循环）。
+              body: MiuixLayerBackdropCapture(
+                backdrop: miuixBackdrop,
+                child: Column(
+                  children: [
+                    _RoamTopBar(
+                      isDark: isDark,
+                      title: onHome ? '' : _titleOf(tab!),
+                      onNewTab: _openTabs,
+                      onTapTitle: _openSearch,
+                    ),
+                    _RoamProgress(tab: tab),
+                    // 只有网页区参与侧滑动画：顶栏、进度条、底栏原地不动，
+                    // 跟原生浏览器「内容区退场、外壳不动」的表现一致。
+                    Expanded(
+                      child: _buildPageArea(tab, isDark, brightness, onHome),
+                    ),
+                    _RoamBottomBar(
+                      isDark: isDark,
+                      tab: tab,
+                      controller: _controller,
+                      onMenu: _openMenu,
+                      onTabs: _openTabs,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -178,6 +183,52 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
     if (uri == null || uri.host.isEmpty) return tab.title;
     final path = uri.path == '/' ? '' : uri.path;
     return '${uri.host}$path';
+  }
+
+  Widget _buildPageArea(
+    BrowserTab? tab,
+    bool isDark,
+    Brightness brightness,
+    bool onHome,
+  ) {
+    final site = tab;
+    final enabled = site != null && !_covered && !onHome;
+    Widget? backdrop;
+    if (site != null && !_covered && !onHome) {
+      backdrop = _backdropFor(site.id);
+    }
+    return PredictiveBackScope(
+      style: PredictiveBackStyle.horizontal,
+      enabled: enabled,
+      backdrop: backdrop,
+      onCommit: () => unawaited(_handleSystemBack()),
+      child: _buildTabs(isDark, brightness),
+    );
+  }
+
+  /// 上一页的模糊快照层。
+  ///
+  /// 这个子树里有一层全屏高斯模糊，重建一次就是一次全屏重绘，所以按
+  /// `(tabId, 缓存版本号)` 缓存 widget 实例：手势过程中 [AnimatedBuilder]
+  /// 反复重建也不会重新算模糊，只是改一层 Transform。
+  Widget? _backdropFor(String tabId) {
+    final cache = PagePreviewCache.instance;
+    final revision = cache.revisionOf(tabId);
+    if (_backdropTabId == tabId && _backdropRevision == revision) {
+      return _backdrop;
+    }
+    _backdropTabId = tabId;
+    _backdropRevision = revision;
+    // 没有上一页时（新标签的第一页）退化成当前页的虚影：总比露出一块纯色底好，
+    // 视觉上就是「页面被推开，露出自己的虚影」。
+    final preview = cache.previous(tabId) ?? cache.currentOf(tabId);
+    _backdrop = preview == null
+        ? null
+        : _PageBackdrop(
+            key: ValueKey<String>('backdrop_${preview.url}_$revision'),
+            preview: preview,
+          );
+    return _backdrop;
   }
 
   Widget _buildTabs(bool isDark, Brightness brightness) {
@@ -436,17 +487,83 @@ class WebViewHost extends StatefulWidget {
 }
 
 class _WebViewHostState extends State<WebViewHost> {
+  static const PageSnapshotService _snapshots = PageSnapshotService();
+
+  Timer? _captureTimer;
+  int _seenGeneration = -1;
+  bool _capturing = false;
+
   @override
   void initState() {
     super.initState();
     widget.controller.ensureTabController(widget.tab);
+    widget.controller.addListener(_onControllerChanged);
+    _seenGeneration = widget.tab.loadGeneration;
   }
 
   @override
   void didUpdateWidget(covariant WebViewHost oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.tab.id != widget.tab.id) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
       widget.controller.ensureTabController(widget.tab);
+      _seenGeneration = widget.tab.loadGeneration;
+    }
+  }
+
+  @override
+  void dispose() {
+    _captureTimer?.cancel();
+    widget.controller.removeListener(_onControllerChanged);
+    super.dispose();
+  }
+
+  /// 页面加载完成（[BrowserTab.loadGeneration] 变化）后补一张低分辨率快照。
+  ///
+  /// 只在标签页可见时抓：IndexedStack 里没显示的 WebView 不在窗口合成里，
+  /// 抓出来是一张空白图。
+  void _onControllerChanged() {
+    final tab = widget.tab;
+    if (widget.controller.activeTab?.id != tab.id) return;
+    if (tab.isLoading || tab.url.isEmpty) return;
+    if (tab.loadGeneration == _seenGeneration) return;
+    _seenGeneration = tab.loadGeneration;
+    _captureTimer?.cancel();
+    _captureTimer = Timer(const Duration(milliseconds: 260), () {
+      unawaited(_capture(tab));
+    });
+  }
+
+  Future<void> _capture(BrowserTab tab) async {
+    if (!mounted || _capturing) return;
+    if (widget.controller.activeTab?.id != tab.id) return;
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final size = box.size;
+    if (size.width < 32 || size.height < 32) return;
+
+    final origin = box.localToGlobal(Offset.zero);
+    final ratio = MediaQuery.devicePixelRatioOf(context);
+    _capturing = true;
+    try {
+      final bytes = await _snapshots.capture(
+        rect: Rect.fromLTWH(origin.dx, origin.dy, size.width, size.height),
+        devicePixelRatio: ratio,
+      );
+      if (bytes == null || !mounted) return;
+      final preview = PagePreview(
+        url: tab.url,
+        bytes: bytes,
+        aspectRatio: size.width / size.height,
+      );
+      PagePreviewCache.instance.record(tab.id, preview);
+      // 提前解码，手势开始时第一帧就能画出来，不然会闪一下空白。
+      try {
+        await precacheImage(MemoryImage(bytes), context);
+      } catch (_) {}
+    } finally {
+      _capturing = false;
     }
   }
 
@@ -482,6 +599,49 @@ class _WebViewHostState extends State<WebViewHost> {
             },
           ),
       ],
+    );
+  }
+}
+
+/// 侧滑时露出来的「上一页」：一张低分辨率快照 + 重度模糊。
+///
+/// 快照本身只有 480px 宽，`FilterQuality.low` 放大已经自带柔化，再叠一层
+/// 高斯模糊，看起来就是原生浏览器把上一页压在后面的效果。
+///
+/// 整个子树放在 [RepaintBoundary] 里：手势过程中只有外层 Transform 在变，
+/// 模糊结果缓存成一层，不会每帧重算。
+class _PageBackdrop extends StatelessWidget {
+  const _PageBackdrop({super.key, required this.preview});
+
+  final PagePreview preview;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return ColoredBox(
+      color: isDark ? Colors.black : RoamColors.daySky,
+      child: RepaintBoundary(
+        child: ClipRect(
+          // 1.12 倍是留给外层视差位移的余量，同时补掉模糊采样到边界外的半透明。
+          child: Transform.scale(
+            scale: 1.12,
+            child: ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(
+                sigmaX: 18,
+                sigmaY: 18,
+                tileMode: ui.TileMode.decal,
+              ),
+              child: Image.memory(
+                preview.bytes,
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.low,
+                gaplessPlayback: true,
+                excludeFromSemantics: true,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

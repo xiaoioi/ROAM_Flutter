@@ -10,6 +10,7 @@ import '../models/browser_models.dart';
 import '../services/browser_store.dart';
 import '../services/default_bookmarks.dart';
 import '../services/download_service.dart';
+import '../services/page_preview_cache.dart';
 import '../services/system_bridge.dart';
 import '../services/url_resolver.dart';
 import '../services/web_permission_service.dart';
@@ -170,6 +171,7 @@ class BrowserController extends ChangeNotifier {
     final index = _tabs.indexWhere((tab) => tab.id == id);
     if (index < 0) return;
     final tab = _tabs.removeAt(index);
+    PagePreviewCache.instance.drop(tab.id);
 
     if (tab.isIncognito) {
       unawaited(_wipeIncognito(tab));
@@ -252,6 +254,8 @@ class BrowserController extends ChangeNotifier {
   void goHome(BrowserTab? tab) {
     final target = tab ?? activeTab;
     if (target == null) return;
+    // 回首页等于把这一页的历史作废，预览图也没意义了。
+    PagePreviewCache.instance.drop(target.id);
     target
       ..url = ''
       ..title = '新标签页'
@@ -268,10 +272,13 @@ class BrowserController extends ChangeNotifier {
 
   /// 后退一页；真的后退了返回 true，网页没有历史返回 false。
   Future<bool> goBack() async {
-    final controller = activeTab?.webController;
-    if (controller == null) return false;
+    final tab = activeTab;
+    final controller = tab?.webController;
+    if (tab == null || controller == null) return false;
     if (await controller.canGoBack()) {
       await controller.goBack();
+      // 上一页已经消费掉了，下一次 onPageFinished 不再重复入栈。
+      PagePreviewCache.instance.consumeBack(tab.id);
       return true;
     }
     return false;
@@ -512,6 +519,7 @@ class BrowserController extends ChangeNotifier {
     if (history) {
       this.history.clear();
       await store.saveHistory(this.history);
+      PagePreviewCache.instance.clear();
     }
     if (bookmarks) {
       this.bookmarks.clear();
@@ -572,6 +580,7 @@ class BrowserController extends ChangeNotifier {
             },
             onPageFinished: (url) async {
               tab.isLoading = false;
+              tab.loadGeneration++;
               if (url.isNotEmpty && !url.startsWith('about:')) {
                 tab.url = url;
               }

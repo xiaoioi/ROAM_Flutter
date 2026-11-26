@@ -469,6 +469,9 @@ class BrowserTab {
   bool canGoForward = false;
   String? errorDescription;
 
+  /// 每次 `onPageFinished` 自增，UI 靠它判断「该抓一张预览图了」。
+  int loadGeneration = 0;
+
   bool get isHome => url.isEmpty;
 
   Map<String, Object?> toJson() => {
