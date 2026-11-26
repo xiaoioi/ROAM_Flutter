@@ -1,0 +1,10 @@
+{
+  "app": {
+    "bundleName": "com.roam.explore",
+    "vendor": "roam",
+    "versionCode": 1029,
+    "versionName": "1.0.29",
+    "icon": "$media:app_icon",
+    "label": "$string:app_name"
+  }
+}

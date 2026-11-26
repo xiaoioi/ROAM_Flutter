@@ -1,0 +1,28 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "星环 Roam 浏览器"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "星环 Roam 浏览器"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "星环"
+    },
+    {
+      "name": "reason_camera",
+      "value": "网页需要使用相机扫码或拍摄照片"
+    },
+    {
+      "name": "reason_microphone",
+      "value": "网页需要使用麦克风录音或语音输入"
+    },
+    {
+      "name": "reason_location",
+      "value": "网页需要获取你当前的位置信息"
+    }
+  ]
+}

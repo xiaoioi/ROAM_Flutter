@@ -1,0 +1,28 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Roam Browser"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Roam Browser"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Roam"
+    },
+    {
+      "name": "reason_camera",
+      "value": "Web pages need the camera to scan codes or take photos"
+    },
+    {
+      "name": "reason_microphone",
+      "value": "Web pages need the microphone to record audio"
+    },
+    {
+      "name": "reason_location",
+      "value": "Web pages need your current location"
+    }
+  ]
+}
