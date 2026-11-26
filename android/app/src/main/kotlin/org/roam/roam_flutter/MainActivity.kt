@@ -315,19 +315,8 @@ class MainActivity : FlutterActivity() {
             intent.removeCategory(Intent.CATEGORY_BROWSABLE)
             if (tryStart(intent)) return "opened"
 
-            if (!fallback.isNullOrEmpty()) {
-                "fallback:$fallback"
-            } else {
-                val store = playStoreUrlFor(url)
-                if (store != null && tryStart(Intent(Intent.ACTION_VIEW, Uri.parse(store)).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    })
-                ) {
-                    "opened"
-                } else {
-                    "noHandler"
-                }
-            }
+            // 没装就如实返回，由上层提示「未安装」，不再自作主张拉应用市场。
+            if (!fallback.isNullOrEmpty()) "fallback:$fallback" else "noHandler"
         } catch (e: Exception) {
             "failed:${e.message}"
         }
@@ -342,13 +331,6 @@ class MainActivity : FlutterActivity() {
         } catch (e: SecurityException) {
             false
         }
-    }
-
-    /** market:// 协议在没有应用市场的设备上退化成网页。 */
-    private fun playStoreUrlFor(url: String): String? {
-        if (!url.startsWith("market://")) return null
-        val id = Uri.parse(url).getQueryParameter("id") ?: return null
-        return "https://play.google.com/store/apps/details?id=$id"
     }
 
     private fun requestSystemPermissions(

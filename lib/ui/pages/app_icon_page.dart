@@ -6,6 +6,7 @@ import '../../state/browser_controller.dart';
 import '../../theme/roam_theme.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/roam_chrome.dart';
+import '../app_messenger.dart';
 
 /// 编辑 App 图标。
 /// 取自 pages/ChangeAppIconUI/main.lua：两组卡片——「默认图标」为 ROAM Explore Monet，
@@ -27,15 +28,10 @@ class AppIconPage extends StatelessWidget {
   Future<void> _pick(BuildContext context, String key) async {
     await controller.updateSettings(controller.settings.copyWith(appIcon: key));
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('已更改图标，需要重新启动 App'),
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(milliseconds: 1800),
-        ),
-      );
+    showRoamToast(
+      '已更改图标，需要重新启动 App',
+      duration: const Duration(milliseconds: 1800),
+    );
   }
 
   @override

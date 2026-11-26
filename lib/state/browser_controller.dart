@@ -797,21 +797,34 @@ class BrowserController extends ChangeNotifier {
 
   /// 把非 http(s) 链接交给系统：Android 走隐式 Intent，鸿蒙走 startAbility。
   ///
-  /// 失败时按 `intent://` 自带的 browser_fallback_url 回网页，再不行给个提示，
-  /// 避免用户点了完全没反应。
+  /// 这里**不维护任何应用清单**（不写 `bilibili://`、`weixin://` 之类的白名单）：
+  /// 外部协议能不能打开，由系统在真正 `startActivity` 时决定。流程固定为
+  /// 「问一句 → 用户点打开 → 交给系统」，系统接不住就提示未安装。
   Future<void> _launchExternal(Uri uri, BrowserTab tab) async {
-    // 「网站行为管控」的三道闸：总开关、系统应用白名单、跳转前验证。
     if (!settings.allowAppRedirect) {
       showRoamToast('已按「网站行为管控」拦截跳转到应用');
       return;
     }
-    if (settings.systemAppOnlyRedirect && !_isSystemScheme(uri.scheme)) {
-      showRoamToast('仅允许跳转到系统应用，已拦截 ${uri.scheme}://');
+    final scheme = uri.scheme.toLowerCase();
+    // 「仅允许系统应用」只认系统协议（电话/短信/邮件/地图/应用市场），
+    // 这些由系统组件处理，不涉及第三方 App 安装。
+    if (settings.systemAppOnlyRedirect && !_isSystemUriScheme(scheme)) {
+      showRoamToast('仅允许跳转到系统应用，已拦截 $scheme://');
       return;
     }
+
+    // intent:// 的真实协议在 `scheme=` 参数里，提示时换成它，别让用户看到 intent://。
+    final intent = AndroidIntent.tryParse(uri.toString());
+    final targetScheme = intent == null
+        ? scheme
+        : (Uri.tryParse(intent.targetUrl)?.scheme ?? scheme);
+    final label = targetScheme.isEmpty ? '外部应用' : '$targetScheme://';
+    final confirmed = await showRoamConfirmToast('网站请求打开 $label，是否允许？');
+    if (!confirmed) return;
+
     if (settings.verifyOnExternal) {
       final status = await AppLockService.instance.requestOwnerVerification(
-        reason: '允许网站跳转到 ${uri.scheme}:// 应用',
+        reason: '允许网站跳转到 $label 应用',
       );
       if (status == OwnerConfirmStatus.cancelled) {
         showRoamToast('未通过机主验证，已取消跳转');
@@ -826,29 +839,29 @@ class BrowserController extends ChangeNotifier {
     );
     if (result.handled) return;
 
+    // intent:// 自带回退地址：装不上时回网页，别把用户扔在原地。
     final fallback = result.fallbackUrl;
     if (fallback != null && fallback.isNotEmpty) {
       await openAddress(fallback, tab: tab);
       return;
     }
 
-    final label = uri.scheme.isEmpty ? '该链接' : '${uri.scheme}:// 链接';
-    showRoamToast('没有找到可以打开$label的应用');
+    showRoamToast('未安装可打开 $label 的应用');
   }
 
-  /// 系统应用协议白名单：这些由系统自身处理，不会把用户交给第三方 App。
-  static const _systemSchemes = {
+  /// 系统协议（不是应用白名单）：这些 scheme 由系统组件处理，
+  /// 「仅允许系统应用」开关才放行。其余一律当作第三方 App 协议。
+  static const _systemUriSchemes = {
     'tel',
     'sms',
     'smsto',
     'mailto',
     'geo',
     'market',
-    'callto',
   };
 
-  static bool _isSystemScheme(String scheme) =>
-      _systemSchemes.contains(scheme.toLowerCase());
+  static bool _isSystemUriScheme(String scheme) =>
+      _systemUriSchemes.contains(scheme.toLowerCase());
 
   /// 当前标签页的 origin，用于站点权限的「记住」与提示文案。
   String _originOf(BrowserTab tab) {

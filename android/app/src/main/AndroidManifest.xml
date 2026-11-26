@@ -77,51 +77,5 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="tel"/>
         </intent>
-        <!-- 常见客户端的 scheme：只是为了让 canLaunchUrl 之类的探测可用，
-             真正的跳转走 startActivity，不受包可见性限制。 -->
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="weixin"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="alipays"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="taobao"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="tmall"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="openapp.jdmobile"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="bilibili"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="snssdk1128"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="sinaweibo"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="zhihu"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="xhsdiscover"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="market"/>
-        </intent>
     </queries>
 </manifest>

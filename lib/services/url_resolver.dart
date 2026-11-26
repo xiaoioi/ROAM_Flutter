@@ -76,53 +76,21 @@ class UrlResolver {
     'content',
   };
 
-  /// 电话、邮件、应用市场，以及微信 / 支付宝 / 淘宝等常见客户端协议。
-  static const _appSchemes = {
-    'mailto',
-    'tel',
-    'sms',
-    'smsto',
-    'geo',
-    'market',
-    'intent',
-    'weixin',
-    'wechat',
-    'alipays',
-    'alipay',
-    'taobao',
-    'tmall',
-    'tbopen',
-    'openapp.jdmobile',
-    'bilibili',
-    'snssdk1128',
-    'sinaweibo',
-    'zhihu',
-    'xhsdiscover',
-    'kwai',
-    'pinduoduo',
-    'youku',
-    'iqiyi',
-    'qqmusic',
-    'orpheus',
-    'neteasecloudmusic',
-    'spotify',
-    'whatsapp',
-    'tg',
-    'instagram',
-    'fb',
-    'twitter',
-    'youtube',
-  };
+  /// 系统协议：这些 scheme 不带 `//`，但必须交给系统处理（拨号、短信、邮件、地图）。
+  ///
+  /// 这里刻意**不列任何第三方 App 的 scheme**——`bilibili://`、`weixin://`
+  /// 这类是否可用由系统决定，浏览器不维护白名单。
+  static const _systemSchemes = {'mailto', 'tel', 'sms', 'smsto', 'geo', 'market'};
 
   /// 已知协议 + 任意「看起来像客户端协议」的 scheme。
   ///
-  /// 判断标准：非内部协议；已知协议直接放行；其余必须写成 `xxx://…`，
-  /// 避免把 `foo:bar` 这种随手输入当成协议去拉起应用。
+  /// 判断标准：非内部协议；`intent://` 与系统协议直接放行；其余必须写成
+  /// `xxx://…`，避免把 `foo:bar` 这种随手输入当成协议去拉起应用。
   static bool _isAppScheme(Uri uri, String raw) {
     final scheme = uri.scheme.toLowerCase();
     if (scheme.isEmpty || _internalSchemes.contains(scheme)) return false;
-    if (_appSchemes.contains(scheme)) return true;
-    return raw.contains('://') && scheme.length > 2;
+    if (scheme == 'intent' || _systemSchemes.contains(scheme)) return true;
+    return raw.contains('://') && scheme.length > 1;
   }
 
   static String shortUrl(String value) {

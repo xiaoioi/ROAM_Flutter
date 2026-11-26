@@ -24,6 +24,7 @@ import 'history_page.dart';
 import 'legal_page.dart';
 import 'site_behavior_page.dart';
 import 'toolbar_customize_page.dart';
+import '../app_messenger.dart';
 
 /// 设置。
 /// 分组与文案取自 pages/Settings/main.lua：
@@ -390,15 +391,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _toast(String message) {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 1600),
-        ),
-      );
+    showRoamToast(message, duration: const Duration(milliseconds: 1600));
   }
 
   Future<void> _hint(BuildContext context, String title, String body) async {
@@ -634,14 +627,7 @@ class _AccountCard extends StatelessWidget {
           children: [
             InkWell(
               onTap: () {
-                ScaffoldMessenger.of(context)
-                  ..clearSnackBars()
-                  ..showSnackBar(
-                    const SnackBar(
-                      content: Text('星构云登录暂未接入'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
+                showRoamToast('星构云登录暂未接入');
               },
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(10, 15, 10, 15),

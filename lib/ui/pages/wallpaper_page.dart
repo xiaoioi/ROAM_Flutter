@@ -6,6 +6,7 @@ import '../../state/browser_controller.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/hyperos_top_bar.dart';
 import '../widgets/roam_chrome.dart';
+import '../app_messenger.dart';
 
 /// 默认壁纸（对应原版 pages/SystemWallpaper）。
 /// 四张内置壁纸：万木、落阳、暮光、空境，整屏预览 + 设置为壁纸 / 下一张。
@@ -87,15 +88,10 @@ class _WallpaperPageState extends State<WallpaperPage> {
       _controller.settings.copyWith(wallpaper: item.id),
     );
     Navigator.of(context).maybePop();
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('已设置为「${item.title}」'),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 1400),
-        ),
-      );
+    showRoamToast(
+      '已设置为「${item.title}」',
+      duration: const Duration(milliseconds: 1400),
+    );
   }
 
   void _next() {

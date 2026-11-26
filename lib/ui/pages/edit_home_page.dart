@@ -10,6 +10,7 @@ import '../../state/browser_controller.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/predictive_back.dart';
 import 'material_effects_page.dart';
+import '../app_messenger.dart';
 
 /// 编辑主界面背景（对应原版 pages/LauncherStyleSettings）。
 /// 中间是主界面预览，底部工具栏：HDR 显示 / 材质设置 / 背景设置 / 模糊背景 / 浅色模式。
@@ -74,15 +75,10 @@ class _EditHomePageState extends State<EditHomePage> {
                         scale: 0.92,
                         onTap: () {
                           Navigator.of(context).maybePop();
-                          ScaffoldMessenger.of(context)
-                            ..clearSnackBars()
-                            ..showSnackBar(
-                              const SnackBar(
-                                content: Text('已应用主界面设置'),
-                                behavior: SnackBarBehavior.floating,
-                                duration: Duration(milliseconds: 1400),
-                              ),
-                            );
+                          showRoamToast(
+                            '已应用主界面设置',
+                            duration: const Duration(milliseconds: 1400),
+                          );
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(

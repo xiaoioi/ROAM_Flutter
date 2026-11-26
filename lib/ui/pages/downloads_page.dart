@@ -12,6 +12,7 @@ import '../widgets/glass_controls.dart';
 import '../widgets/roam_chrome.dart';
 import '../widgets/hyperos_top_bar.dart';
 import '../widgets/roam_sheet.dart';
+import '../app_messenger.dart';
 
 class DownloadsPage extends StatelessWidget {
   const DownloadsPage({super.key, required this.controller});
@@ -25,11 +26,9 @@ class DownloadsPage extends StatelessWidget {
       await OpenFilex.open(entry.path);
     } catch (_) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('当前系统暂不支持直接打开，文件位置：${entry.path}'),
-          duration: const Duration(seconds: 4),
-        ),
+      showRoamToast(
+        '当前系统暂不支持直接打开，文件位置：${entry.path}',
+        duration: const Duration(seconds: 4),
       );
     }
   }

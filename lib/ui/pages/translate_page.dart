@@ -12,6 +12,7 @@ import '../widgets/glass_controls.dart';
 import '../widgets/hyperos_top_bar.dart';
 import '../widgets/roam_chrome.dart';
 import 'ai_settings_page.dart';
+import '../app_messenger.dart';
 
 /// AI 翻译。
 ///
@@ -162,15 +163,7 @@ class _TranslatePageState extends State<TranslatePage> {
   }
 
   void _toast(String message) {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 1600),
-        ),
-      );
+    showRoamToast(message, duration: const Duration(milliseconds: 1600));
   }
 
   Future<void> _copyResult() async {

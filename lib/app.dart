@@ -142,7 +142,6 @@ class _RoamAppState extends State<RoamApp> {
       child: MaterialApp(
         title: '星环 Roam',
         debugShowCheckedModeBanner: false,
-        scaffoldMessengerKey: roamMessengerKey,
         navigatorObservers: [roamRouteObserver],
         theme: RoamTheme.build(Brightness.light, fontFamily: _fontFamily),
         darkTheme: RoamTheme.build(Brightness.dark, fontFamily: _fontFamily),
@@ -192,7 +191,22 @@ class _RoamAppState extends State<RoamApp> {
                   // 后压进来的路由，同时底下的 WebView 保持挂载不重建。
                   child: AppLockGate(
                     controller: widget.controller,
-                    child: child ?? const SizedBox.shrink(),
+                    child: Stack(
+                      children: [
+                        child ?? const SizedBox.shrink(),
+                        // Miuix Snackbar 宿主：提示统一走系统样式，挂在
+                        // Navigator 之上，抬到工具栏上方免得被底栏挡住。
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 58,
+                          child: MiuixSnackbarHost(
+                            state: roamSnackbarHost,
+                            blurSigma: 28,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

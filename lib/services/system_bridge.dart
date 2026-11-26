@@ -5,8 +5,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 /// 外部链接 / 系统能力桥接。
 ///
-/// 网页里的 `intent://`、`weixin://`、`alipays://`、`bilibili://` 这类协议，
-/// 以及 tel:/mailto:/market:，Flutter 侧无法自己发起，必须交给系统。
+/// 网页里的 `xxx://` 协议（以及 tel:/mailto:/market: 这类系统协议），
+/// Flutter 侧无法自己发起，必须交给系统。这里不预设任何应用清单，能不能
+/// 打开由系统 `startActivity` 决定。
 ///
 /// 之前用 `url_launcher` 的 `canLaunchUrl`：Android 11 起受包可见性限制，
 /// 没有在 `<queries>` 里声明的第三方 scheme 一律返回 false，于是点了没反应。
@@ -33,14 +34,16 @@ class SystemBridge {
     String url, {
     String? referer,
   }) async {
-    // 鸿蒙不认识 intent://，先在 Dart 侧拆成真实 scheme。
+    // 鸿蒙不认识 intent://，先在 Dart 侧拆成真实 scheme；Android 侧保留原始
+    // intent://，让原生解析出 browser_fallback_url 一起带回来。
     final intent = AndroidIntent.tryParse(url);
     final target = intent?.targetUrl ?? url;
+    final nativeUrl = Platform.isAndroid ? url : target;
 
     if (_hasNative) {
       try {
         final raw = await _channel.invokeMethod<String>('openExternal', {
-          'url': target,
+          'url': nativeUrl,
           'referer': referer,
         });
         switch (raw) {

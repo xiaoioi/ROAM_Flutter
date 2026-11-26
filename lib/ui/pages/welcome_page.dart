@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 
 import '../../services/system_bridge.dart';
 import '../widgets/confirm.dart';
+import '../app_messenger.dart';
 
 class WelcomePage extends StatefulWidget {
   const WelcomePage({super.key, required this.onDone});
@@ -73,25 +74,11 @@ class _WelcomePageState extends State<WelcomePage>
       final path = await _channel.invokeMethod<String>('pickFile');
       if (!mounted) return;
       if (path != null) {
-        ScaffoldMessenger.of(context)
-          ..clearSnackBars()
-          ..showSnackBar(
-            SnackBar(
-              content: Text('已选择「$label」文件'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+        showRoamToast('已选择「$label」文件');
       }
     } on PlatformException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text('选择文件失败：${e.message}'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+      showRoamToast('选择文件失败：${e.message}');
     }
   }
 
@@ -105,14 +92,7 @@ class _WelcomePageState extends State<WelcomePage>
       destructive: true,
     );
     if (!confirmed || !mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('已删除自动备份内容'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    showRoamToast('已删除自动备份内容');
   }
 
   /// 打开系统应用详情页
@@ -121,14 +101,7 @@ class _WelcomePageState extends State<WelcomePage>
       await _channel.invokeMethod<bool>('openAppDetails');
     } on PlatformException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text('无法打开应用详情：${e.message}'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+      showRoamToast('无法打开应用详情：${e.message}');
     }
   }
 

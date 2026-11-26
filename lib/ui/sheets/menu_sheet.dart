@@ -16,6 +16,7 @@ import '../widgets/predictive_back.dart';
 import '../pages/history_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/translate_page.dart';
+import '../app_messenger.dart';
 
 /// 底部菜单：ROAM 新版工具栏 —— 时间头 + 「工具栏」标题 + 4 列功能网格
 /// + 页点。玻璃为 miuix 柔光玻璃（HyperOS），图标底座浅色圆。
@@ -371,15 +372,7 @@ class _MenuPanelState extends State<_MenuPanel> {
 
   void _toast(BuildContext context, String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 1400),
-        ),
-      );
+    showRoamToast(message, duration: const Duration(milliseconds: 1400));
   }
 }
 
