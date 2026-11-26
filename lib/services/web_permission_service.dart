@@ -37,6 +37,35 @@ extension SitePermissionKindLabel on SitePermissionKind {
   };
 }
 
+/// 站点能力的全局开关（「网站行为管控」页）。
+///
+/// 与单站点的「记住选择」是两层：全局关掉就直接拒绝，连确认框都不弹。
+@immutable
+class SitePolicy {
+  const SitePolicy({
+    this.allowCamera = true,
+    this.allowMicrophone = true,
+    this.allowLocation = true,
+    this.allowClipboardRead = true,
+    this.allowClipboardWrite = true,
+    this.preciseLocation = true,
+  });
+
+  final bool allowCamera;
+  final bool allowMicrophone;
+  final bool allowLocation;
+  final bool allowClipboardRead;
+  final bool allowClipboardWrite;
+  final bool preciseLocation;
+
+  bool allows(SitePermissionKind kind) => switch (kind) {
+    SitePermissionKind.camera => allowCamera,
+    SitePermissionKind.microphone => allowMicrophone,
+    SitePermissionKind.location => allowLocation,
+    SitePermissionKind.clipboard => allowClipboardRead,
+  };
+}
+
 /// 一次待确认的站点权限申请。UI 拿到后需要调用
 /// [WebPermissionService.approve] / [WebPermissionService.reject] 收尾。
 class SitePermissionPrompt {
@@ -72,12 +101,22 @@ class WebPermissionService extends ChangeNotifier {
   static const _storeKey = 'roam.site_permissions.v1';
 
   final Map<String, Map<String, bool>> _decisions = {};
+
+  /// 全局能力开关，由 [BrowserController] 在启动与设置变更时同步。
+  SitePolicy policy = const SitePolicy();
+
   SitePermissionPrompt? _pending;
   Future<void> _queue = Future<void>.value();
   bool _loaded = false;
 
   /// 当前正在等待用户确认的申请，null 表示没有。
   SitePermissionPrompt? get pending => _pending;
+
+  /// 同步全局开关；已记住的站点选择不受影响，但会被开关先拦一道。
+  void applyPolicy(SitePolicy next) {
+    policy = next;
+    notifyListeners();
+  }
 
   Future<void> _ensureLoaded() async {
     if (_loaded) return;
@@ -130,6 +169,11 @@ class WebPermissionService extends ChangeNotifier {
   ) async {
     await _ensureLoaded();
 
+    // 全局关掉的直接拒绝，不弹确认框，也不写「记住」。
+    final permitted = kinds.where(policy.allows).toSet();
+    if (permitted.isEmpty) return false;
+    kinds = permitted;
+
     final saved = _decisions[origin];
     if (saved != null) {
       final remembered = <SitePermissionKind>[];
@@ -176,7 +220,10 @@ class WebPermissionService extends ChangeNotifier {
         .map((kind) => kind.nativeKey)
         .toList();
     if (nativeKinds.isEmpty) return true;
-    return SystemBridge.ensurePermissions(nativeKinds);
+    return SystemBridge.ensurePermissions(
+      nativeKinds,
+      preciseLocation: policy.preciseLocation,
+    );
   }
 
   /// 用户点了「允许」。
@@ -331,6 +378,11 @@ class WebPermissionService extends ChangeNotifier {
   /// 才转给宿主 App 弹权限框，避免破坏本来就正常的站点。
   Future<void> installClipboardShim(WebViewController controller) async {
     try {
+      // 写入开关要先注入：垫片每次都会重装，但读取常量发生在调用时，
+      // 所以页面中途改设置也能立刻生效。
+      await controller.runJavaScript(
+        'window.__roamAllowClipboardWrite = ${policy.allowClipboardWrite};',
+      );
       await controller.runJavaScript(clipboardShimJs);
     } catch (_) {}
   }
@@ -410,5 +462,22 @@ const String clipboardShimJs = r'''
   } catch (err) {
     // 某些内核拒绝改写原型，忽略即可。
   }
+
+  // 写入方向只受「网站行为管控」的全局开关控制：关掉就直接拒绝，
+  // 不弹框（写剪贴板不会泄露用户数据，原版也是纯开关）。
+  try {
+    var writeProto = window.Clipboard && Clipboard.prototype;
+    if (writeProto && typeof writeProto.writeText === 'function') {
+      var originalWrite = writeProto.writeText;
+      writeProto.writeText = function (text) {
+        if (window.__roamAllowClipboardWrite === false) {
+          return Promise.reject(
+            new DOMException('网站不允许写入剪贴板', 'NotAllowedError')
+          );
+        }
+        return originalWrite.apply(this, arguments);
+      };
+    }
+  } catch (err) {}
 })();
 ''';

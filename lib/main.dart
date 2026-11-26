@@ -6,6 +6,7 @@ import 'package:flutter_miuix/miuix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'services/app_lock_service.dart';
 import 'services/browser_store.dart';
 import 'state/browser_controller.dart';
 
@@ -21,6 +22,8 @@ Future<void> main() async {
   final preferences = await SharedPreferences.getInstance();
   final controller = BrowserController(store: BrowserStore(preferences));
   await controller.initialize();
+  // 应用锁密码在首帧前读好，否则锁页会晚一帧出现（先闪一下浏览器）。
+  await AppLockService.instance.load();
 
   runApp(RoamApp(controller: controller));
 }

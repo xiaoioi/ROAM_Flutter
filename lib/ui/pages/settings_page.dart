@@ -15,12 +15,14 @@ import '../widgets/roam_sheet.dart';
 import 'about_page.dart';
 import 'ai_settings_page.dart';
 import 'appearance_page.dart';
+import 'biometrics_page.dart';
 import 'bookmarks_page.dart';
 import 'bottom_bar_customize_page.dart';
 import 'browser_settings_page.dart';
 import 'downloads_page.dart';
 import 'history_page.dart';
 import 'legal_page.dart';
+import 'site_behavior_page.dart';
 import 'toolbar_customize_page.dart';
 
 /// 设置。
@@ -309,7 +311,14 @@ class _SettingsPageState extends State<SettingsPage> {
         _Item(
           icon: 'assets/images/fingerprint.png',
           label: '生物验证与锁定',
-          onTap: () => _hint(context, '生物验证与锁定', '当前版本尚未接入指纹解锁，后续会以系统生物识别为入口。'),
+          subtitle: _controller.settings.appLockEnabled ? '应用锁已开启' : '密码 · 指纹 · 面容',
+          onTap: () => _open(BiometricsPage(controller: _controller)),
+        ),
+        _Item(
+          icon: 'assets/images/behavior_control.png',
+          label: '网站行为管控',
+          subtitle: '应用跳转 · 权限 · 剪贴板',
+          onTap: () => _open(SiteBehaviorPage(controller: _controller)),
         ),
         _Item(
           icon: 'assets/images/safe.png',

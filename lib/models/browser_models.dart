@@ -80,6 +80,17 @@ class BrowserSettings {
     this.blurBackground = true,
     this.hdrDisplay = false,
     this.topBarGlass = false,
+    this.allowAppRedirect = true,
+    this.systemAppOnlyRedirect = false,
+    this.allowLocation = true,
+    this.preciseLocation = true,
+    this.allowClipboardRead = true,
+    this.allowClipboardWrite = true,
+    this.allowCamera = true,
+    this.hidePassword = true,
+    this.verifyOnLaunch = false,
+    this.appLockEnabled = false,
+    this.verifyOnExternal = false,
     List<String>? toolbarItems,
     List<String>? bottomBarItems,
   }) : toolbarItems = toolbarItems ?? defaultToolbarItems,
@@ -215,6 +226,37 @@ class BrowserSettings {
   /// 顶栏圆钮是否走真实背景采样玻璃（false = 澎湃 4 实心圆钮）。
   final bool topBarGlass;
 
+  // ---- 网站行为管控（pages/BehaviorControl）----
+
+  /// 允许网站通过自定义协议跳转到已安装的 App。
+  final bool allowAppRedirect;
+
+  /// 只允许跳转到系统应用（电话 / 短信 / 邮件 / 应用商店），Beta。
+  final bool systemAppOnlyRedirect;
+
+  final bool allowLocation;
+
+  /// 允许网页拿到精确位置（关闭后只申请粗略定位，系统会回大范围坐标）。
+  final bool preciseLocation;
+
+  final bool allowClipboardRead;
+  final bool allowClipboardWrite;
+  final bool allowCamera;
+
+  // ---- 生物验证与锁定（pages/Biometrics）----
+
+  /// 解锁页的密码是否掩码显示。
+  final bool hidePassword;
+
+  /// 进入应用时验证机主身份（优先系统生物识别，回退设备凭据）。
+  final bool verifyOnLaunch;
+
+  /// 应用锁：启动 / 回到前台需要输入应用锁密码。
+  final bool appLockEnabled;
+
+  /// 网站跳转到其他 App 前需要验证机主身份。
+  final bool verifyOnExternal;
+
   /// 工具栏自定义：显示的功能 id 有序列表。
   final List<String> toolbarItems;
 
@@ -270,6 +312,17 @@ class BrowserSettings {
     bool? blurBackground,
     bool? hdrDisplay,
     bool? topBarGlass,
+    bool? allowAppRedirect,
+    bool? systemAppOnlyRedirect,
+    bool? allowLocation,
+    bool? preciseLocation,
+    bool? allowClipboardRead,
+    bool? allowClipboardWrite,
+    bool? allowCamera,
+    bool? hidePassword,
+    bool? verifyOnLaunch,
+    bool? appLockEnabled,
+    bool? verifyOnExternal,
     List<String>? toolbarItems,
     List<String>? bottomBarItems,
   }) {
@@ -323,6 +376,18 @@ class BrowserSettings {
       blurBackground: blurBackground ?? this.blurBackground,
       hdrDisplay: hdrDisplay ?? this.hdrDisplay,
       topBarGlass: topBarGlass ?? this.topBarGlass,
+      allowAppRedirect: allowAppRedirect ?? this.allowAppRedirect,
+      systemAppOnlyRedirect:
+          systemAppOnlyRedirect ?? this.systemAppOnlyRedirect,
+      allowLocation: allowLocation ?? this.allowLocation,
+      preciseLocation: preciseLocation ?? this.preciseLocation,
+      allowClipboardRead: allowClipboardRead ?? this.allowClipboardRead,
+      allowClipboardWrite: allowClipboardWrite ?? this.allowClipboardWrite,
+      allowCamera: allowCamera ?? this.allowCamera,
+      hidePassword: hidePassword ?? this.hidePassword,
+      verifyOnLaunch: verifyOnLaunch ?? this.verifyOnLaunch,
+      appLockEnabled: appLockEnabled ?? this.appLockEnabled,
+      verifyOnExternal: verifyOnExternal ?? this.verifyOnExternal,
       toolbarItems: toolbarItems ?? this.toolbarItems,
       bottomBarItems: bottomBarItems ?? this.bottomBarItems,
     );
@@ -377,6 +442,17 @@ class BrowserSettings {
     'blurBackground': blurBackground,
     'hdrDisplay': hdrDisplay,
     'topBarGlass': topBarGlass,
+    'allowAppRedirect': allowAppRedirect,
+    'systemAppOnlyRedirect': systemAppOnlyRedirect,
+    'allowLocation': allowLocation,
+    'preciseLocation': preciseLocation,
+    'allowClipboardRead': allowClipboardRead,
+    'allowClipboardWrite': allowClipboardWrite,
+    'allowCamera': allowCamera,
+    'hidePassword': hidePassword,
+    'verifyOnLaunch': verifyOnLaunch,
+    'appLockEnabled': appLockEnabled,
+    'verifyOnExternal': verifyOnExternal,
     'toolbarItems': toolbarItems,
     'bottomBarItems': bottomBarItems,
   };
@@ -438,6 +514,17 @@ class BrowserSettings {
       blurBackground: json['blurBackground'] as bool? ?? true,
       hdrDisplay: json['hdrDisplay'] as bool? ?? false,
       topBarGlass: json['topBarGlass'] as bool? ?? false,
+      allowAppRedirect: json['allowAppRedirect'] as bool? ?? true,
+      systemAppOnlyRedirect: json['systemAppOnlyRedirect'] as bool? ?? false,
+      allowLocation: json['allowLocation'] as bool? ?? true,
+      preciseLocation: json['preciseLocation'] as bool? ?? true,
+      allowClipboardRead: json['allowClipboardRead'] as bool? ?? true,
+      allowClipboardWrite: json['allowClipboardWrite'] as bool? ?? true,
+      allowCamera: json['allowCamera'] as bool? ?? true,
+      hidePassword: json['hidePassword'] as bool? ?? true,
+      verifyOnLaunch: json['verifyOnLaunch'] as bool? ?? false,
+      appLockEnabled: json['appLockEnabled'] as bool? ?? false,
+      verifyOnExternal: json['verifyOnExternal'] as bool? ?? false,
       toolbarItems:
           (json['toolbarItems'] as List?)?.cast<String>() ??
           BrowserSettings.defaultToolbarItems,

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart' show Colors;
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/browser_models.dart';
+import '../services/app_lock_service.dart';
 import '../services/browser_store.dart';
 import '../services/default_bookmarks.dart';
 import '../services/download_service.dart';
@@ -71,6 +72,8 @@ class BrowserController extends ChangeNotifier {
 
   Future<void> initialize() async {
     settings = store.loadSettings();
+    await AppLockService.instance.load();
+    _syncSitePolicy();
     bookmarks
       ..clear()
       ..addAll(store.loadBookmarks());
@@ -512,8 +515,42 @@ class BrowserController extends ChangeNotifier {
     if (previous.desktopMode != next.desktopMode) {
       await _applyUserAgent(reload: true);
     }
+    if (previous.allowCamera != next.allowCamera ||
+        previous.allowLocation != next.allowLocation ||
+        previous.preciseLocation != next.preciseLocation ||
+        previous.allowClipboardRead != next.allowClipboardRead ||
+        previous.allowClipboardWrite != next.allowClipboardWrite) {
+      _syncSitePolicy();
+    }
+    if (previous.allowClipboardWrite != next.allowClipboardWrite) {
+      await _refreshClipboardPolicy();
+    }
     await store.saveSettings(settings);
     _notify();
+  }
+
+  /// 把「网站行为管控」的开关同步给权限中心。
+  void _syncSitePolicy() {
+    WebPermissionService.instance.applyPolicy(
+      SitePolicy(
+        allowCamera: settings.allowCamera,
+        allowLocation: settings.allowLocation,
+        allowClipboardRead: settings.allowClipboardRead,
+        allowClipboardWrite: settings.allowClipboardWrite,
+        preciseLocation: settings.preciseLocation,
+      ),
+    );
+  }
+
+  /// 剪贴板写入开关变了要重新注入垫片，已打开的页面才会立刻生效。
+  Future<void> _refreshClipboardPolicy() async {
+    for (final tab in _tabs) {
+      final controller = tab.webController;
+      if (controller == null) continue;
+      try {
+        await WebPermissionService.instance.installClipboardShim(controller);
+      } catch (_) {}
+    }
   }
 
   Future<void> setSearchEngine(SearchEngine engine) =>
@@ -763,6 +800,26 @@ class BrowserController extends ChangeNotifier {
   /// 失败时按 `intent://` 自带的 browser_fallback_url 回网页，再不行给个提示，
   /// 避免用户点了完全没反应。
   Future<void> _launchExternal(Uri uri, BrowserTab tab) async {
+    // 「网站行为管控」的三道闸：总开关、系统应用白名单、跳转前验证。
+    if (!settings.allowAppRedirect) {
+      showRoamToast('已按「网站行为管控」拦截跳转到应用');
+      return;
+    }
+    if (settings.systemAppOnlyRedirect && !_isSystemScheme(uri.scheme)) {
+      showRoamToast('仅允许跳转到系统应用，已拦截 ${uri.scheme}://');
+      return;
+    }
+    if (settings.verifyOnExternal) {
+      final status = await AppLockService.instance.requestOwnerVerification(
+        reason: '允许网站跳转到 ${uri.scheme}:// 应用',
+      );
+      if (status == OwnerConfirmStatus.cancelled) {
+        showRoamToast('未通过机主验证，已取消跳转');
+        return;
+      }
+      // unavailable / failed：设备没有验证方式，不因此阻断正常跳转。
+    }
+
     final result = await SystemBridge.openExternal(
       uri.toString(),
       referer: tab.url.isEmpty ? null : tab.url,
@@ -778,6 +835,20 @@ class BrowserController extends ChangeNotifier {
     final label = uri.scheme.isEmpty ? '该链接' : '${uri.scheme}:// 链接';
     showRoamToast('没有找到可以打开$label的应用');
   }
+
+  /// 系统应用协议白名单：这些由系统自身处理，不会把用户交给第三方 App。
+  static const _systemSchemes = {
+    'tel',
+    'sms',
+    'smsto',
+    'mailto',
+    'geo',
+    'market',
+    'callto',
+  };
+
+  static bool _isSystemScheme(String scheme) =>
+      _systemSchemes.contains(scheme.toLowerCase());
 
   /// 当前标签页的 origin，用于站点权限的「记住」与提示文案。
   String _originOf(BrowserTab tab) {

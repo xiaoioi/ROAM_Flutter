@@ -2,6 +2,7 @@ package org.roam.roam_flutter
 
 import android.Manifest
 import android.app.Activity
+import android.app.KeyguardManager
 import android.content.ActivityNotFoundException
 import android.content.ClipboardManager
 import android.content.Context
@@ -12,10 +13,13 @@ import android.graphics.Canvas
 import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
+import android.os.CancellationSignal
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.provider.Settings
+import android.hardware.biometrics.BiometricManager
+import android.hardware.biometrics.BiometricPrompt
 import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
@@ -32,6 +36,8 @@ class MainActivity : FlutterActivity() {
     private val snapshotChannelName = "org.roam.roam_flutter/page_snapshot"
     private var pendingResult: MethodChannel.Result? = null
     private var permissionResult: MethodChannel.Result? = null
+    private var ownerResult: MethodChannel.Result? = null
+    private val ownerSignal = CancellationSignal()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -84,8 +90,14 @@ class MainActivity : FlutterActivity() {
                     }
                     "ensurePermissions" -> {
                         val kinds = call.argument<List<String>>("kinds") ?: emptyList()
-                        requestSystemPermissions(kinds, result)
+                        val precise = call.argument<Boolean>("preciseLocation") ?: true
+                        requestSystemPermissions(kinds, precise, result)
                     }
+                    "confirmOwner" -> confirmOwner(
+                        call.argument<String>("reason") ?: "验证机主身份",
+                        result,
+                    )
+                    "ownerVerificationAvailable" -> result.success(ownerVerificationAvailable())
                     "readClipboard" -> result.success(readClipboardText())
                     else -> result.notImplemented()
                 }
@@ -339,14 +351,20 @@ class MainActivity : FlutterActivity() {
         return "https://play.google.com/store/apps/details?id=$id"
     }
 
-    private fun requestSystemPermissions(kinds: List<String>, result: MethodChannel.Result) {
+    private fun requestSystemPermissions(
+        kinds: List<String>,
+        preciseLocation: Boolean,
+        result: MethodChannel.Result,
+    ) {
         val wanted = ArrayList<String>()
         for (kind in kinds) {
             when (kind) {
                 "camera" -> wanted.add(Manifest.permission.CAMERA)
                 "microphone" -> wanted.add(Manifest.permission.RECORD_AUDIO)
                 "location" -> {
-                    wanted.add(Manifest.permission.ACCESS_FINE_LOCATION)
+                    // 「精确位置」关闭时只申请粗略定位，系统会回大范围坐标；
+                    // 一旦申请过 FINE，就无法再降级，所以这里必须严格区分。
+                    if (preciseLocation) wanted.add(Manifest.permission.ACCESS_FINE_LOCATION)
                     wanted.add(Manifest.permission.ACCESS_COARSE_LOCATION)
                 }
             }
@@ -377,6 +395,102 @@ class MainActivity : FlutterActivity() {
             grantResults.all { it == PackageManager.PERMISSION_GRANTED }
         permissionResult?.success(granted)
         permissionResult = null
+    }
+
+    // ------------------------------------------------------------ 机主验证
+
+    private fun ownerVerificationAvailable(): Boolean {
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                val manager = getSystemService(Context.BIOMETRIC_SERVICE) as BiometricManager
+                val allowed = BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                    BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                if (manager.canAuthenticate(allowed) == BiometricManager.BIOMETRIC_SUCCESS) {
+                    return true
+                }
+            } catch (_: Exception) {
+            }
+        }
+        val keyguard = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        return keyguard.isDeviceSecure
+    }
+
+    /**
+     * 验证机主身份：Android 11+ 直接弹系统生物识别（允许回退设备凭据），
+     * 更早的系统用 KeyguardManager 的设备凭据确认页。
+     */
+    private fun confirmOwner(reason: String, result: MethodChannel.Result) {
+        if (ownerResult != null) {
+            result.error("BUSY", "Another verification is in progress", null)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                val allowed = BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                    BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                val manager = getSystemService(Context.BIOMETRIC_SERVICE) as BiometricManager
+                if (manager.canAuthenticate(allowed) == BiometricManager.BIOMETRIC_SUCCESS) {
+                    ownerResult = result
+                    val prompt = BiometricPrompt.Builder(this)
+                        .setTitle("验证机主身份")
+                        .setSubtitle(reason)
+                        .setAllowedAuthenticators(allowed)
+                        .build()
+                    prompt.authenticate(
+                        ownerSignal,
+                        mainExecutor,
+                        object : BiometricPrompt.AuthenticationCallback() {
+                            override fun onAuthenticationSucceeded(
+                                authResult: BiometricPrompt.AuthenticationResult,
+                            ) {
+                                finishOwner("confirmed")
+                            }
+
+                            override fun onAuthenticationError(
+                                errorCode: Int,
+                                errString: CharSequence,
+                            ) {
+                                // 平台版 BiometricPrompt 不导出错误码常量（只有
+                                // androidx 那套有），这里按 AOSP BiometricConstants
+                                // 的取值判断用户主动取消：
+                                // 5 = ERROR_CANCELED、10 = ERROR_USER_CANCELED、
+                                // 13 = ERROR_NEGATIVE_BUTTON。
+                                val cancelled = errorCode == 5 ||
+                                    errorCode == 10 ||
+                                    errorCode == 13
+                                finishOwner(if (cancelled) "cancelled" else "failed")
+                            }
+                        },
+                    )
+                    return
+                }
+            } catch (_: Exception) {
+                ownerResult = null
+            }
+        }
+
+        val keyguard = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        if (!keyguard.isDeviceSecure) {
+            result.success("unavailable")
+            return
+        }
+        val intent = keyguard.createConfirmDeviceCredentialIntent("验证机主身份", reason)
+        if (intent == null) {
+            result.success("unavailable")
+            return
+        }
+        ownerResult = result
+        try {
+            startActivityForResult(intent, REQUEST_OWNER_CREDENTIAL)
+        } catch (_: Exception) {
+            ownerResult = null
+            result.success("failed")
+        }
+    }
+
+    private fun finishOwner(state: String) {
+        ownerResult?.success(state)
+        ownerResult = null
     }
 
     @Suppress("DEPRECATION")
@@ -428,6 +542,10 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_OWNER_CREDENTIAL) {
+            finishOwner(if (resultCode == Activity.RESULT_OK) "confirmed" else "cancelled")
+            return
+        }
         if (requestCode != REQUEST_PICK_IMAGE && requestCode != REQUEST_PICK_FILE) return
 
         if (resultCode != Activity.RESULT_OK || data == null) {
@@ -484,5 +602,6 @@ class MainActivity : FlutterActivity() {
         private const val REQUEST_PICK_IMAGE = 0x524F
         private const val REQUEST_PICK_FILE = 0x5250
         private const val REQUEST_PERMISSIONS = 0x5251
+        private const val REQUEST_OWNER_CREDENTIAL = 0x5252
     }
 }

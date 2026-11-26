@@ -15,6 +15,7 @@ import 'ui/browser_shell.dart';
 import 'ui/pages/settings_page.dart';
 import 'ui/pages/material_effects_page.dart';
 import 'ui/pages/welcome_page.dart';
+import 'ui/widgets/app_lock_gate.dart';
 import 'ui/widgets/glass_controls.dart';
 import 'ui/widgets/predictive_back.dart';
 
@@ -186,7 +187,13 @@ class _RoamAppState extends State<RoamApp> {
                   // 注意：MiuixLayerBackdropCapture 的捕获层放在 BrowserShell
                   // 的 body 内（只包页面内容，不含 Navigator），modal 弹层在
                   // 其外采样，因此不会把玻璃自身录进快照（OS4 反馈循环）。
-                  child: child ?? const SizedBox.shrink(),
+                  //
+                  // 应用锁套在 Navigator 外面：锁页要盖住设置页、弹层这些
+                  // 后压进来的路由，同时底下的 WebView 保持挂载不重建。
+                  child: AppLockGate(
+                    controller: widget.controller,
+                    child: child ?? const SizedBox.shrink(),
+                  ),
                 ),
               ),
             ),

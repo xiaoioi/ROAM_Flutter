@@ -94,17 +94,59 @@ class SystemBridge {
   ///
   /// 网页通过 `getUserMedia`、`geolocation` 请求设备时，WebView 只是把请求
   /// 转给我们；真正能不能拿到硬件，取决于宿主 App 是否已获得系统授权。
-  static Future<bool> ensurePermissions(List<String> kinds) async {
+  ///
+  /// [preciseLocation] 为 false 时只申请粗略定位（Android 12 起系统本来也
+  /// 允许用户只给大致位置，这里对应「精确位置」开关）。
+  static Future<bool> ensurePermissions(
+    List<String> kinds, {
+    bool preciseLocation = true,
+  }) async {
     if (kinds.isEmpty) return true;
     if (!_hasNative) return true;
     try {
       final granted = await _channel.invokeMethod<bool>('ensurePermissions', {
         'kinds': kinds,
+        'preciseLocation': preciseLocation,
       });
       return granted ?? false;
     } catch (_) {
       // 原生通道缺失时不做拦截，交给 WebView 自己报错。
       return true;
+    }
+  }
+
+  /// 验证机主身份：生物识别优先，回退设备凭据（锁屏密码 / 图案）。
+  ///
+  /// 鸿蒙与桌面端暂未接入，返回 [OwnerConfirmStatus.unavailable]，调用方
+  /// 退回到应用锁密码。
+  static Future<OwnerConfirmStatus> confirmOwner(String reason) async {
+    if (!_hasNative) return OwnerConfirmStatus.unavailable;
+    try {
+      final raw = await _channel.invokeMethod<String>('confirmOwner', {
+        'reason': reason,
+      });
+      return switch (raw) {
+        'confirmed' => OwnerConfirmStatus.confirmed,
+        'cancelled' => OwnerConfirmStatus.cancelled,
+        'unavailable' => OwnerConfirmStatus.unavailable,
+        null => OwnerConfirmStatus.failed,
+        _ => OwnerConfirmStatus.failed,
+      };
+    } on MissingPluginException {
+      return OwnerConfirmStatus.unavailable;
+    } catch (_) {
+      return OwnerConfirmStatus.failed;
+    }
+  }
+
+  /// 设备是否具备机主验证能力（有生物识别硬件或设置了锁屏密码）。
+  static Future<bool> ownerVerificationAvailable() async {
+    if (!_hasNative) return false;
+    try {
+      return await _channel.invokeMethod<bool>('ownerVerificationAvailable') ??
+          false;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -121,6 +163,21 @@ class SystemBridge {
       return null;
     }
   }
+}
+
+/// 机主验证结果。
+enum OwnerConfirmStatus {
+  /// 通过（生物识别或设备凭据）。
+  confirmed,
+
+  /// 用户主动取消。
+  cancelled,
+
+  /// 设备没有可用的验证方式。
+  unavailable,
+
+  /// 调用失败（原生异常等）。
+  failed,
 }
 
 enum ExternalLaunchStatus { opened, noHandler, failed }
