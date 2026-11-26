@@ -63,28 +63,65 @@ class PagePreviewCache extends ChangeNotifier {
   /// 全部标签页加起来的上限，超了从最旧的一头丢。
   static const int _maxTotalBytes = 6 * 1024 * 1024;
 
-  /// `consumeBack` 之后、下一页加载完成之前的空窗期，用来防止重复入栈。
-  /// 用时间戳而不是布尔量，避免后退失败时标记永久残留。
-  static const Duration _suppressWindow = Duration(seconds: 4);
+  /// `consumeBack` 之后、下一页真正开始加载之前的空窗期，用来防止后退
+  /// 被误当成「又进了一页」而重复入栈。
+  ///
+  /// 只覆盖从 `onPageStarted` 到 `onPageFinished` 这段，1.5s 足够；
+  /// 原来设 4s 会把「后退回来之后马上又点进另一个页面」也吞掉。
+  static const Duration _suppressWindow = Duration(milliseconds: 1500);
 
   final Map<String, _TabPreviews> _tabs = <String, _TabPreviews>{};
   final Map<String, DateTime> _suppressUntil = <String, DateTime>{};
 
+  /// 已经判定为「后退」的导航：`onPageStarted` 消费了抑制标记，
+  /// 但同一次导航的 `onPageFinished` 也不能再入栈。
+  final Set<String> _skipRecord = <String>{};
+
   _TabPreviews _of(String tabId) => _tabs.putIfAbsent(tabId, _TabPreviews.new);
+
+  /// 消费一次抑制标记：一次后退只拦「这一次导航」。
+  bool _consumeSuppression(String tabId) {
+    final until = _suppressUntil.remove(tabId);
+    return until != null && DateTime.now().isBefore(until);
+  }
+
+  /// 压栈，同一张图不重复压。
+  void _pushBack(_TabPreviews state, PagePreview preview) {
+    if (state.back.isNotEmpty && state.back.last.url == preview.url) return;
+    state.back.add(preview);
+    if (state.back.length > _maxDepth) {
+      state.back.removeRange(0, state.back.length - _maxDepth);
+    }
+  }
+
+  /// 新页面开始加载时调用（`onPageStarted`）：**立刻**把当前页压栈。
+  ///
+  /// 这是「上一页」最可靠的来源：压栈不再依赖新页面抓图成功。以前只在
+  /// 新页加载完成后比较 URL 才补压，新页一慢、一失败、或者 URL 恰好没变，
+  /// 栈就一直是空的，侧滑时自然没有可铺的背景。
+  void beginNavigation(String tabId) {
+    _skipRecord.remove(tabId);
+    final state = _tabs[tabId];
+    final current = state?.current;
+    if (state == null || current == null) return;
+    // 后退回来的那一次不再入栈，否则栈里会多出一张「刚离开的页」。
+    if (_consumeSuppression(tabId)) {
+      _skipRecord.add(tabId);
+      return;
+    }
+    _pushBack(state, current);
+    state.revision++;
+    notifyListeners();
+  }
 
   /// 页面加载完成后记录当前页。
   void record(String tabId, PagePreview preview) {
     final state = _of(tabId);
     final current = state.current;
-
-    final until = _suppressUntil.remove(tabId);
-    final suppressing = until != null && DateTime.now().isBefore(until);
-
-    if (!suppressing && current != null && current.url != preview.url) {
-      state.back.add(current);
-      if (state.back.length > _maxDepth) {
-        state.back.removeRange(0, state.back.length - _maxDepth);
-      }
+    // 兜底：单页应用改 URL 不走 onPageStarted，这里补一次入栈。
+    final skip = _skipRecord.remove(tabId) || _consumeSuppression(tabId);
+    if (!skip && current != null && current.url != preview.url) {
+      _pushBack(state, current);
     }
     state.current = preview;
     state.revision++;
@@ -121,6 +158,7 @@ class PagePreviewCache extends ChangeNotifier {
   void drop(String tabId) {
     final changed = _tabs.remove(tabId) != null;
     _suppressUntil.remove(tabId);
+    _skipRecord.remove(tabId);
     if (changed) notifyListeners();
   }
 
@@ -129,6 +167,7 @@ class PagePreviewCache extends ChangeNotifier {
     if (_tabs.isEmpty) return;
     _tabs.clear();
     _suppressUntil.clear();
+    _skipRecord.clear();
     notifyListeners();
   }
 
@@ -136,6 +175,7 @@ class PagePreviewCache extends ChangeNotifier {
   void dispose() {
     _tabs.clear();
     _suppressUntil.clear();
+    _skipRecord.clear();
     super.dispose();
   }
 

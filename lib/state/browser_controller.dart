@@ -298,9 +298,10 @@ class BrowserController extends ChangeNotifier {
     final controller = tab?.webController;
     if (tab == null || controller == null) return false;
     if (await controller.canGoBack()) {
-      await controller.goBack();
-      // 上一页已经消费掉了，下一次 onPageFinished 不再重复入栈。
+      // 先标记再后退：后退触发的 onPageStarted 会紧跟着到达，
+      // 晚设置就来不及拦，栈里会多出一张「刚离开的那一页」。
       PagePreviewCache.instance.consumeBack(tab.id);
+      await controller.goBack();
       return true;
     }
     return false;
@@ -599,6 +600,9 @@ class BrowserController extends ChangeNotifier {
                 ..progress = 0
                 ..errorDescription = null
                 ..url = url;
+              // 一开始就把当前页压进预览栈：等新页加载完再补，遇到慢页面、
+              // 加载失败或重定向（URL 没变）就永远补不上，侧滑时没有背景。
+              PagePreviewCache.instance.beginNavigation(tab.id);
               _notify();
               // 剪贴板垫片要尽早注入，晚了站点可能已经调用过。
               unawaited(

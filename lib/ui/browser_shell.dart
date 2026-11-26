@@ -225,7 +225,11 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
     if (_backdropTabId == tab.id && _backdropRevision == revision) {
       return _backdrop;
     }
-    final preview = cache.previous(tab.id);
+    // 有上一页但没有对应快照（刚加载完就侧滑、或抓图失败）时，
+    // 用当前页的虚影兜底——同站点的画面接近，总比露出一块纯色好。
+    // 真的没有历史（退回去就是首页）才是空白。
+    final preview = cache.previous(tab.id) ??
+        (tab.canGoBack ? cache.currentOf(tab.id) : null);
     _backdropTabId = tab.id;
     _backdropRevision = revision;
     _backdrop = preview == null
@@ -680,7 +684,9 @@ class _PageBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 纯色页（白底文档、纯黑夜间模式）直接铺平均色，一点模糊都不加。
-    final textureAlpha = (0.72 * (1 - preview.flatness)).clamp(0.0, 0.72);
+    // 中间地带做连续过渡：flatness 0.55 以下保持完整模糊，0.85 以上完全交给底色。
+    final fade = ((preview.flatness - 0.55) / 0.30).clamp(0.0, 1.0);
+    final textureAlpha = 0.88 * (1 - fade);
     return ColoredBox(
       color: preview.averageColor,
       child: RepaintBoundary(
