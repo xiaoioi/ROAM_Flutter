@@ -109,7 +109,18 @@ ensure_android_sdk() {
 # ---------------------------------------------------------------- DevEco / HarmonyOS SDK
 ensure_deveco() {
   local tools="$CACHE_ROOT/deveco-tools"
-  if [[ ! -d "$tools/sdk" || ! -x "$tools/hvigor/bin/hvigorw" ]]; then
+  # commandline-tools zip 的顶层目录是 command-line-tools/，解压后 SDK 位于
+  # $tools/command-line-tools/sdk；但有人为准备的缓存直接放到 $tools/sdk。
+  # 两种布局都要认，否则 DEVECO_SDK_HOME 指向不存在的目录，flutter pub get
+  # 会报 "No Hmos SDK found"。
+  local root=""
+  for candidate in "$tools/command-line-tools" "$tools"; do
+    if [[ -d "$candidate/sdk" && -x "$candidate/hvigor/bin/hvigorw" ]]; then
+      root="$candidate"
+      break
+    fi
+  done
+  if [[ -z "$root" ]]; then
     log "首次构建：下载 DevEco commandline-tools 5.1.0.840（约 2.1GB）"
     rm -rf "$tools"
     mkdir -p "$tools"
@@ -117,13 +128,27 @@ ensure_deveco() {
       https://repo.huaweicloud.com/harmonyos/ohpm/5.1.0/commandline-tools-linux-x64-5.1.0.840.zip \
       -o "$CACHE_ROOT/deveco-tools.zip"
     unzip -q "$CACHE_ROOT/deveco-tools.zip" -d "$tools"
+    for candidate in "$tools/command-line-tools" "$tools"; do
+      if [[ -d "$candidate/sdk" && -x "$candidate/hvigor/bin/hvigorw" ]]; then
+        root="$candidate"
+        break
+      fi
+    done
   else
-    log "复用缓存的 DevEco 工具链: $tools"
+    log "复用缓存的 DevEco 工具链: $root"
   fi
-  export DEVECO_SDK_HOME="$tools/sdk"
-  export HOS_SDK_HOME="$tools/sdk"
-  export OHOS_SDK_HOME="$tools/sdk"
-  export PATH="$tools/hvigor/bin:$tools/ohpm/bin:$tools/tool/node/bin:$PATH"
+  if [[ -z "$root" ]]; then
+    echo "[roam-ci] 解压后未找到有效的 DevEco tools（sdk/ + hvigor/bin/hvigorw）" >&2
+    find "$tools" -maxdepth 3 -type d | head -30 >&2
+    exit 1
+  fi
+  log "DevEco tools 根目录: $root"
+  export DEVECO_SDK_HOME="$root/sdk"
+  export HOS_SDK_HOME="$root/sdk"
+  export OHOS_SDK_HOME="$root/sdk"
+  export PATH="$root/hvigor/bin:$root/ohpm/bin:$root/tool/node/bin:$PATH"
+  # Flutter 的 hvigor 调用需要 node，显式给出 NODE_HOME。
+  export NODE_HOME="$root/tool/node"
   hvigorw --version 2>/dev/null | head -3 || true
 }
 
