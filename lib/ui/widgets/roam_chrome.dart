@@ -7,6 +7,7 @@ import '../../theme/roam_theme.dart';
 import 'edge_fade.dart';
 import 'glass_controls.dart';
 import 'hyperos_top_bar.dart';
+import 'roam_backdrop_scope.dart';
 
 /// 二级页外壳（澎湃 OS 4 样式）：
 ///  - 内容从状态栏下方铺满，可以一直滚到顶栏下面；
@@ -55,13 +56,24 @@ class RoamPageScaffold extends StatefulWidget {
 }
 
 class _RoamPageScaffoldState extends State<RoamPageScaffold> {
-  /// 页面级背景采样器：顶栏玻璃圆钮和上下边缘渐隐共用同一份快照。
+  /// 页面级背景采样器：顶栏玻璃圆钮、顶栏模糊带和底部渐隐共用同一份快照。
   ///
   /// 之前的实现只把 `widget.child` 包进捕获层，页面底色是由
   /// `Scaffold.backgroundColor` 画的、在捕获范围之外——子页快照里只有
   /// 透明像素和卡片，玻璃采样不到底色就退回实心灰，这正是「玻璃按钮
   /// 只在设置主页生效」的原因。现在把底色一起包进来。
   final MiuixLayerBackdrop _backdrop = MiuixLayerBackdrop();
+
+  /// 内容是否已离开顶部。miuix 的顶栏按钮用它决定「玻璃底 + 描边」是否淡入。
+  bool _scrolled = false;
+
+  bool _onScroll(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    if (notification.metrics.axis != Axis.vertical) return false;
+    final next = notification.metrics.pixels > 4;
+    if (next != _scrolled) setState(() => _scrolled = next);
+    return false;
+  }
 
   @override
   void dispose() {
@@ -81,12 +93,11 @@ class _RoamPageScaffoldState extends State<RoamPageScaffold> {
       body: ListenableBuilder(
         listenable: GlassRuntime.repaint,
         builder: (context, _) {
-          // 性能模式下不跑渐变模糊，圆钮也不采样背景（miuix 会退回
-          // 不带折射的玻璃底），材质总开关关闭时同理。
+          // 材质总开关关闭 / 性能模式下不采样、不跑模糊，圆钮退回纯图标。
           final perf = GlassRuntime.performance.value;
           final edgeFade = GlassRuntime.edgeFade.value && !perf;
-          final glassButtons = GlassRuntime.material.value && !perf;
-          final needCapture = edgeFade || glassButtons;
+          final material = GlassRuntime.material.value && !perf;
+          final needCapture = edgeFade || material;
 
           // 底色 + 内容放在同一个捕获子树里：玻璃和渐隐都采样它。
           Widget page = ColoredBox(
@@ -107,72 +118,73 @@ class _RoamPageScaffoldState extends State<RoamPageScaffold> {
             );
           }
 
-          // 顶栏渐隐从屏幕最顶端开始：状态栏（通知栏）背景也在这条带里，
-          // 内容滚到通知栏后面时同样被磨砂掉，而不是只遮住顶栏那 64dp。
-          // 带子正好在 `contentTopPadding`（barHeight + 8）处结束，
-          // 所以列表第一张卡片的顶边是清晰的，不会被误糊。
-          const tail = 8.0;
-          final topFadeHeight = safeTop + RoamPageScaffold.barHeight + tail;
-
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              // 内容：从状态栏下方开始铺满；页面用
-              // RoamPageScaffold.contentTopPadding 给顶栏让位。
-              Positioned.fill(child: page),
-              // 底边渐隐：内容到达底栏前淡出
-              if (edgeFade)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: 32,
-                  child: IgnorePointer(
-                    child: RoamEdgeFade(
-                      backdrop: _backdrop,
-                      fromTop: false,
-                      blurRadius: 32,
-                      strength: 0.9,
-                    ),
+          return RoamBackdropScope(
+            backdrop: _backdrop,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // 内容：从状态栏下方开始铺满；页面用
+                // RoamPageScaffold.contentTopPadding 给顶栏让位。
+                Positioned.fill(
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: _onScroll,
+                    child: page,
                   ),
                 ),
-              // 顶边渐隐：盖住通知栏 + 顶栏；IgnorePointer 保证不挡点击。
-              if (edgeFade)
+                // 底边渐隐：内容到达底栏前淡出（官方 band 参数，非自造遮罩）
+                if (edgeFade)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 32,
+                    child: IgnorePointer(
+                      child: RoamEdgeFade(
+                        backdrop: _backdrop,
+                        fromTop: false,
+                        blurRadius: 24,
+                        strength: 0.9,
+                      ),
+                    ),
+                  ),
+                // 顶栏：玻璃 band + 官方 SmallTopAppBar + 玻璃圆钮。
+                // 槽位从 y=0 起算，状态栏这一段也算在带子里——内容滚到
+                // 通知栏后面时同样被渐进模糊磨掉，而不是只糊顶栏那 64dp。
                 Positioned(
                   top: 0,
                   left: 0,
                   right: 0,
-                  height: topFadeHeight,
-                  child: IgnorePointer(
-                    // 与 miuix 顶栏同一条 progressive blur 带：上糊下清。
-                    child: RoamEdgeFade(backdrop: _backdrop),
+                  height: safeTop + RoamPageScaffold.barHeight,
+                  child: Column(
+                    children: [
+                      SizedBox(height: safeTop),
+                      SizedBox(
+                        height: RoamPageScaffold.barHeight,
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child:
+                              widget.topBar ??
+                              HyperosTopBar(
+                                title: widget.title,
+                                actions: widget.actions,
+                                onBack: widget.onBack,
+                                showBack: widget.showBack,
+                                miuixLayer: material ? _backdrop : null,
+                                scrolled: _scrolled,
+                                edgeFade: edgeFade,
+                              ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              // 顶栏：透明底 + 圆形玻璃钮 + 居中标题
-              Positioned(
-                top: safeTop,
-                left: 0,
-                right: 0,
-                height: RoamPageScaffold.barHeight,
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child:
-                      widget.topBar ??
-                      HyperosTopBar(
-                        title: widget.title,
-                        actions: widget.actions,
-                        onBack: widget.onBack,
-                        showBack: widget.showBack,
-                        miuixLayer: glassButtons ? _backdrop : null,
-                      ),
-                ),
-              ),
-              if (widget.bottom != null)
-                Positioned(left: 0, right: 0, bottom: 0, child: widget.bottom!),
-              // 全屏浮层（搜索）：在捕获子树外面，玻璃能采到真背景。
-              if (widget.overlayBuilder != null)
-                Positioned.fill(child: widget.overlayBuilder!(_backdrop)),
-            ],
+                if (widget.bottom != null)
+                  Positioned(left: 0, right: 0, bottom: 0, child: widget.bottom!),
+                // 全屏浮层（搜索）：在捕获子树外面，玻璃能采到真背景。
+                if (widget.overlayBuilder != null)
+                  Positioned.fill(child: widget.overlayBuilder!(_backdrop)),
+              ],
+            ),
           );
         },
       ),

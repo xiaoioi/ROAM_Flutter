@@ -7,6 +7,7 @@ import '../../state/browser_controller.dart';
 import '../../theme/roam_theme.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/roam_chrome.dart';
+import '../widgets/roam_segmented.dart';
 
 /// 材质显示效果（对应原版 pages/ModifyMaterialEffect）。
 ///
@@ -293,7 +294,7 @@ class _Segments extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final index = options.indexWhere((option) => option.$1 == value);
-    return MiuixGlassSegmentedTabRow(
+    return RoamSegmented(
       tabs: [for (final option in options) option.$2],
       selectedIndex: index < 0 ? 0 : index,
       onSelect: (i) => onChanged(options[i].$1),

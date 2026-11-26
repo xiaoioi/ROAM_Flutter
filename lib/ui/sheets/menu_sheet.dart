@@ -184,7 +184,14 @@ class _MenuPanelState extends State<_MenuPanel> {
       ),
     );
 
-    return RoamGlassSheetSurface(child: content);
+    // 首页（Flutter 绘制）能采样到真背景；网页 tab 的 WebView 是
+    // platform view，快照里那块是空的，交给实时模糊兜底。
+    final onHome = widget.controller.activeTab?.isHome ?? true;
+    return RoamGlassSheetSurface(
+      backdrop: miuixBackdrop,
+      trustSnapshot: onHome,
+      child: content,
+    );
   }
 
   /// 功能目录：id → 条目。工具栏自定义页与这里共用 id。

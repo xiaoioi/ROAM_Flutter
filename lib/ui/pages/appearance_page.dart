@@ -7,6 +7,7 @@ import '../../models/browser_models.dart';
 import '../../state/browser_controller.dart';
 import '../../theme/roam_theme.dart';
 import '../widgets/roam_chrome.dart';
+import '../widgets/roam_segmented.dart';
 import 'app_icon_page.dart';
 import 'edit_home_page.dart';
 import 'font_page.dart';
@@ -572,7 +573,7 @@ class _ThemeSegments extends StatelessWidget {
       (AppThemeMode.light, '浅色模式'),
     ];
     final index = options.indexWhere((option) => option.$1 == value);
-    return MiuixGlassSegmentedTabRow(
+    return RoamSegmented(
       tabs: [for (final option in options) option.$2],
       selectedIndex: index < 0 ? 0 : index,
       onSelect: (i) => onChanged(options[i].$1),

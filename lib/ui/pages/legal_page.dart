@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../../state/browser_controller.dart';
 import '../../theme/roam_theme.dart';
@@ -58,7 +59,7 @@ class LegalPage extends StatelessWidget {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.4),
+      barrierColor: MiuixGlassDialogDefaults.scrimColor,
       builder: (sheetContext) => PredictiveBackScope(
         style: PredictiveBackStyle.sheet,
         onCommit: () => Navigator.of(sheetContext).maybePop(),
@@ -69,11 +70,13 @@ class LegalPage extends StatelessWidget {
           child: RoamGlassSheetSurface(
             radius: 22,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
               child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const RoamSheetHandle(),
+              const SizedBox(height: 4),
               Text(
                 '三方信息共享清单',
                 style: TextStyle(

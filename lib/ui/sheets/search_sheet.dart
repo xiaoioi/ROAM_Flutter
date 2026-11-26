@@ -7,6 +7,7 @@ import 'package:flutter_miuix/miuix.dart';
 import '../../models/browser_models.dart';
 import '../../state/browser_controller.dart';
 import '../widgets/predictive_back.dart';
+import '../widgets/glass_controls.dart';
 import '../widgets/roam_sheet.dart';
 
 /// 首页顶栏空白处 / 网页标题处点击后弹出的「第二界面」。
@@ -308,7 +309,11 @@ class _SearchSheetState extends State<_SearchSheet> {
     return Padding(
       // 键盘弹起时整块面板上移，输入框不会被 IME 盖住。
       padding: EdgeInsets.only(bottom: keyboard),
-      child: RoamGlassSheetSurface(child: content),
+      child: RoamGlassSheetSurface(
+        backdrop: miuixBackdrop,
+        trustSnapshot: widget.controller.activeTab?.isHome ?? true,
+        child: content,
+      ),
     );
   }
 }

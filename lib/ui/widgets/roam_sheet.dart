@@ -8,15 +8,19 @@ import 'package:flutter_miuix/miuix.dart';
 import '../../theme/roam_theme.dart';
 import 'glass_controls.dart';
 import 'predictive_back.dart';
+import 'roam_backdrop_scope.dart';
 
 /// 星环统一的底部玻璃面板：`miuix` 的 GlassBottomSheet 表面 + 顶部圆角。
 ///
-/// 表面直接取 flutter_miuix `GlassBottomSheet` 的那一套：
+/// 表面**直接复用** flutter_miuix 的 `glassBottomSheetSurface`：
 /// [MiuixGlassBottomSheetDefaults.material]（dialogGlass 三层材质）、
-/// [MiuixGlassBottomSheetDefaults.stroke]（forTheme 高光描边）、
-/// [MiuixBottomSheetDefaults.cornerRadius] 的顶部圆角。区别只在于
-/// 面板底下多垫了一层实时高斯模糊——网页 / 设置页都能透出真实背景，
-/// 而不是采样一份可能已经过期的快照（WebView 是 platform view，录不进快照）。
+/// [MiuixGlassBottomSheetDefaults.stroke]（forTheme 高光描边）与
+/// [MiuixGlassBottomSheetDefaults.containerColor]（主题 background 兜底色），
+/// 描边、模糊、混色顺序全部交给库，不再本地叠渐变。
+///
+/// [backdrop] 是页面级背景采样源。miuix 的玻璃是「采样快照 → 高斯模糊 →
+/// 折射 shader」，没有快照时只能画兜底色；`showModalBottomSheet` 压的是新
+/// 路由，面板自己的 context 读不到页面 backdrop，所以在打开之前先取一次。
 Future<T?> showRoamSheet<T>({
   required BuildContext context,
   required String title,
@@ -25,7 +29,7 @@ Future<T?> showRoamSheet<T>({
   double maxHeightFactor = 0.84,
   bool isDismissible = true,
 }) {
-  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final backdrop = RoamBackdropScope.samplingOf(context);
   return showModalBottomSheet<T>(
     context: context,
     useRootNavigator: true,
@@ -33,7 +37,8 @@ Future<T?> showRoamSheet<T>({
     useSafeArea: true,
     isDismissible: isDismissible,
     backgroundColor: Colors.transparent,
-    barrierColor: Colors.black.withValues(alpha: isDark ? 0.46 : 0.28),
+    // miuix GlassDialog / GlassBottomSheet 的遮罩色，不要自己调深。
+    barrierColor: MiuixGlassDialogDefaults.scrimColor,
     elevation: 0,
     builder: (sheetContext) {
       final maxHeight =
@@ -44,6 +49,7 @@ Future<T?> showRoamSheet<T>({
         child: ConstrainedBox(
           constraints: BoxConstraints(maxHeight: maxHeight),
           child: RoamGlassSheetSurface(
+            backdrop: backdrop,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -77,98 +83,111 @@ Future<T?> showRoamSheet<T>({
 /// miuix GlassBottomSheet 的玻璃表面。
 ///
 /// 所有底部弹出框（[showRoamSheet]、菜单、搜索、许可协议、主界面设置）都用它，
-/// 保证圆角、描边、材质、模糊是一家。`GlassRuntime.performance` 打开时
-/// 跳过实时模糊，只留玻璃底与描边，避免低端机上每次拖动都重算背景。
+/// 保证圆角、描边、材质、模糊是一家。
+///
+/// 实现就是库的 `miuixGlassBottomSheetSurface(...)`：同一份 dialogGlass 材质、
+/// 同一条 forTheme 描边、同一个 containerColor，顶部圆角与「向上过拖省略描边」
+/// 也由库决定。唯一本地做的事是无 backdrop 时的兜底——WebView 是 platform view，
+/// 录不进图层快照，此时用引擎的实时高斯模糊代替折射采样，材质/描边保持不变。
 class RoamGlassSheetSurface extends StatelessWidget {
   const RoamGlassSheetSurface({
     super.key,
     required this.child,
+    this.backdrop,
+    this.trustSnapshot = true,
     this.radius = MiuixBottomSheetDefaults.cornerRadius,
-    this.sigma = 30,
     this.forceDark,
   });
 
   final Widget child;
+
+  /// 页面级背景采样源；为空时向祖先 [RoamBackdropScope] 要一个。
+  final MiuixBackdrop? backdrop;
+
+  /// 快照能不能代表面板背后的画面（网页 tab 的 WebView 抓不到，传 false）。
+  final bool trustSnapshot;
   final double radius;
-  final double sigma;
 
   /// 强制按深色渲染（首页壁纸上的抽屉：壁纸上的玻璃要深底白字）。
   final bool? forceDark;
 
   @override
   Widget build(BuildContext context) {
-    final isDark =
-        forceDark ?? (Theme.of(context).brightness == Brightness.dark);
-    final borderRadius = BorderRadius.vertical(top: Radius.circular(radius));
-    final shape = MiuixGlassShape(borderRadius: borderRadius);
+    final source = backdrop ?? RoamBackdropScope.samplingOf(context);
+    final hasBackdrop =
+        trustSnapshot && (source?.hasContent ?? false);
+    final dark =
+        forceDark ??
+        (MiuixTheme.of(context).colors.background.computeLuminance() < .5);
+    // 与 MiuixGlassBottomSheetDefaults 完全同源；forceDark 时换深色那一套。
+    final material = MiuixGlassMaterials.dialogGlass(dark);
+    final stroke = MiuixGlassStrokes.forTheme(dark);
+    // 采样不到背景时（网页 tab）底子要半透明，实时模糊才能透上来；
+    // 有 backdrop 时这个 fill 根本不参与绘制（miuix 自己混合材质）。
+    final fallbackFill = (dark ? const Color(0xFF242424) : Colors.white)
+        .withValues(alpha: 0.82);
 
-    // 材质总开关 / 性能模式：不跑实时模糊，保留 miuix 的玻璃底与描边。
-    final blur =
-        GlassRuntime.material.value && !GlassRuntime.performance.value;
+    Widget surface = miuixGlassBottomSheetSurface(
+      backdrop: hasBackdrop ? source : null,
+      material: material,
+      stroke: stroke,
+      containerColor: hasBackdrop ? null : fallbackFill,
+    )(context, radius, MiuixGlassDialogDefaults.scrimColor, false, child);
 
-    // OS4 三层材质：左上高光 → 底色 → 底部略沉，和 GlassBottomSheet 一致。
-    final tint = isDark
-        ? const Color(0xFF101318).withValues(alpha: 0.82)
-        : Colors.white.withValues(alpha: 0.88);
-
-    Widget body = DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color.alphaBlend(
-              Colors.white.withValues(alpha: isDark ? 0.05 : 0.10),
-              tint,
-            ),
-            tint,
-            Color.alphaBlend(
-              Colors.black.withValues(alpha: isDark ? 0.12 : 0.02),
-              tint,
-            ),
-          ],
-          stops: const [0, 0.55, 1],
-        ),
-      ),
-      child: child,
-    );
-    if (blur) {
-      body = BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        child: body,
-      );
+    if (hasBackdrop ||
+        !GlassRuntime.material.value ||
+        GlassRuntime.performance.value) {
+      return surface;
     }
-
+    // 没有图层快照（网页 tab）：用实时模糊补上"背景是糊的"这一层，
+    // 材质与描边仍是上面那套 miuix 参数。
     return ClipRRect(
-      borderRadius: borderRadius,
-      child: MiuixGlassPanel(
-        shape: shape,
-        material: MiuixGlassBottomSheetDefaults.material(context),
-        stroke: MiuixGlassBottomSheetDefaults.stroke(context),
-        // 底色由上面那层 tint 负责（要压在实时模糊之上），这里不再叠一次。
-        fill: Colors.transparent,
-        shadow: null,
-        shading: false,
-        child: body,
+      borderRadius: BorderRadius.vertical(top: Radius.circular(radius)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(
+          sigmaX: material.blurRadius * .45,
+          sigmaY: material.blurRadius * .45,
+        ),
+        child: surface,
       ),
     );
   }
 }
 
-/// miuix 尺寸的拖拽手柄：45×4，按下时 55×4.6。
-class RoamSheetHandle extends StatelessWidget {
+/// miuix 的拖拽手柄：24dp 高的触区里放 45×4 的小白条，按下放大到 55×4.6。
+class RoamSheetHandle extends StatefulWidget {
   const RoamSheetHandle({super.key});
 
   @override
+  State<RoamSheetHandle> createState() => _RoamSheetHandleState();
+}
+
+class _RoamSheetHandleState extends State<RoamSheetHandle> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 4),
-      child: Container(
-        width: 45,
-        height: 4,
-        decoration: BoxDecoration(
-          color: MiuixBottomSheetDefaults.dragHandleColor(context),
-          borderRadius: BorderRadius.circular(4),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      child: SizedBox(
+        height: 24,
+        width: double.infinity,
+        child: Center(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            width: _pressed ? 55 : 45,
+            height: _pressed ? 4.6 : 4,
+            decoration: BoxDecoration(
+              color: MiuixBottomSheetDefaults.dragHandleColor(
+                context,
+              ).withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
         ),
       ),
     );

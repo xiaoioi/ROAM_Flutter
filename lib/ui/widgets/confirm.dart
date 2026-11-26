@@ -1,10 +1,12 @@
 // ignore_for_file: deprecated_member_use
 
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_miuix/miuix.dart';
 
-import '../../theme/roam_theme.dart';
 import 'predictive_back.dart';
+import 'roam_backdrop_scope.dart';
 
 /// 对话框底部按钮：点按后以 [value] 关闭对话框。
 class RoamDialogAction<T> {
@@ -22,6 +24,10 @@ class RoamDialogAction<T> {
 }
 
 /// 通用 miuix 风格对话框（标题 + 说明 + 自定义内容 + 胶囊按钮）。
+///
+/// 表面走库的 `miuixGlassDialogSurface`：dialogGlass 三层材质 + small 高光
+/// 描边 + 主题 background 兜底色，遮罩色也取 `GlassDialogDefaults.scrimColor`。
+/// [RoamBackdropScope] 里的页面快照负责让对话框背后真的是糊的。
 Future<T?> showRoamDialog<T>({
   required BuildContext context,
   required String title,
@@ -29,9 +35,10 @@ Future<T?> showRoamDialog<T>({
   String? message,
   Widget? body,
 }) {
+  final backdrop = RoamBackdropScope.samplingOf(context);
   return showDialog<T>(
     context: context,
-    barrierColor: Colors.black.withValues(alpha: 0.46),
+    barrierColor: MiuixGlassDialogDefaults.scrimColor,
     builder: (dialogContext) => PredictiveBackScope(
       style: PredictiveBackStyle.dialog,
       onCommit: () => Navigator.of(dialogContext).maybePop(),
@@ -39,6 +46,7 @@ Future<T?> showRoamDialog<T>({
         title: title,
         message: message,
         body: body,
+        backdrop: backdrop,
         actions: [
           for (final action in actions)
             _DialogAction(
@@ -93,15 +101,17 @@ Future<String?> showRoamInput({
   String confirmLabel = '保存',
 }) {
   final controller = TextEditingController(text: initialValue);
+  final backdrop = RoamBackdropScope.samplingOf(context);
   return showDialog<String>(
     context: context,
-    barrierColor: Colors.black.withValues(alpha: 0.46),
+    barrierColor: MiuixGlassDialogDefaults.scrimColor,
     builder: (dialogContext) => PredictiveBackScope(
       style: PredictiveBackStyle.dialog,
       onCommit: () => Navigator.of(dialogContext).maybePop(),
       child: _RoamDialog(
         title: title,
         message: message,
+        backdrop: backdrop,
         body: Padding(
           padding: const EdgeInsets.only(top: 16),
           child: MiuixTextField(
@@ -147,24 +157,92 @@ class _DialogAction {
 }
 
 /// 柔光玻璃对话框：28dp squircle、标题 17sp、正文 14sp、底部胶囊按钮。
+///
+/// 表面由库的 `miuixGlassDialogSurface` 出（与 `MiuixGlassDialog` 同一套），
+/// 没有页面快照时退回 BackdropFilter + 同一份 dialogGlass 材质，
+/// 保证网页 tab（platform view 不进快照）上也是"背后是糊的"。
 class _RoamDialog extends StatelessWidget {
   const _RoamDialog({
     required this.title,
     required this.actions,
     this.message,
     this.body,
+    this.backdrop,
   });
 
   final String title;
   final String? message;
   final Widget? body;
+  final MiuixBackdrop? backdrop;
   final List<_DialogAction> actions;
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fg = isDark ? RoamColors.textPrimary : RoamColors.dayInk;
-    final sub = isDark ? RoamColors.textSecondary : RoamColors.daySecondary;
+    final miuix = MiuixTheme.of(context);
+    final dark = miuix.colors.background.computeLuminance() < .5;
+    final fg = miuix.colors.onSurface;
+    final sub = miuix.colors.onSurfaceVariantSummary;
+    final hasBackdrop = backdrop?.hasContent ?? false;
+
+    final fallbackFill = (dark ? const Color(0xFF242424) : Colors.white)
+        .withValues(alpha: 0.82);
+    Widget surface = miuixGlassDialogSurface(
+      backdrop: hasBackdrop ? backdrop : null,
+      containerColor: hasBackdrop ? null : fallbackFill,
+    )(
+      context,
+      28,
+      MiuixGlassDialogDefaults.scrimColor,
+      1.0,
+      Padding(
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            MiuixText(
+              title,
+              textAlign: TextAlign.center,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              height: 1.3,
+              color: fg,
+            ),
+            if (message != null && message!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              MiuixText(
+                message!,
+                textAlign: TextAlign.center,
+                fontSize: 14,
+                height: 1.45,
+                color: sub,
+              ),
+            ],
+            ?body,
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                for (var i = 0; i < actions.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  Expanded(child: _DialogActionButton(action: actions[i])),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (!hasBackdrop) {
+      final blur = MiuixGlassDialogDefaults.material(context).blurRadius * .45;
+      surface = ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          child: surface,
+        ),
+      );
+    }
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -172,51 +250,7 @@ class _RoamDialog extends StatelessWidget {
       insetPadding: const EdgeInsets.symmetric(horizontal: 34),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
-        child: MiuixGlassPanel(
-          shape: const MiuixGlassShape(cornerRadius: 28),
-          material: MiuixGlassMaterials.dialogGlass(isDark),
-          stroke: MiuixGlassStrokes.big(isDark),
-          shadow: MiuixGlassShadows.floating,
-          fill: isDark ? const Color(0xFF1C1C22) : Colors.white,
-          shading: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 22, 24, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                MiuixText(
-                  title,
-                  textAlign: TextAlign.center,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  height: 1.3,
-                  color: fg,
-                ),
-                if (message != null && message!.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  MiuixText(
-                    message!,
-                    textAlign: TextAlign.center,
-                    fontSize: 14,
-                    height: 1.45,
-                    color: sub,
-                  ),
-                ],
-                ?body,
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    for (var i = 0; i < actions.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 8),
-                      Expanded(child: _DialogActionButton(action: actions[i])),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
+        child: surface,
       ),
     );
   }
@@ -229,27 +263,17 @@ class _DialogActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = MiuixTheme.of(context);
-    final base = action.primary
-        ? MiuixButtonDefaults.buttonColorsPrimary(context)
-        : MiuixButtonDefaults.buttonColors(context);
-    final colors = action.destructive
-        ? MiuixButtonColors(
-            color: RoamColors.danger,
-            disabledColor: RoamColors.danger.withValues(alpha: 0.4),
-            contentColor: Colors.white,
-            disabledContentColor: Colors.white.withValues(alpha: 0.7),
-          )
-        : base;
-
-    return MiuixTextButton(
-      action.label,
+    // 官方 GlassDialogButton：普通/危险用半透明底 + 文字色区分，
+    // 主按钮用主题主色，16dp 圆角、50dp 高，不再自选胶囊与红底白字。
+    return MiuixGlassDialogButton(
       onPressed: action.onPressed,
-      colors: colors,
-      minWidth: 0,
-      minHeight: 42,
-      insideMargin: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
-      textStyle: theme.textStyles.button.copyWith(color: colors.contentColor),
+      role: action.destructive
+          ? MiuixGlassDialogButtonRole.destructive
+          : action.primary
+          ? MiuixGlassDialogButtonRole.primary
+          : MiuixGlassDialogButtonRole.normal,
+      insideMargin: const EdgeInsets.symmetric(horizontal: 10),
+      child: Text(action.label, maxLines: 1, overflow: TextOverflow.ellipsis),
     );
   }
 }

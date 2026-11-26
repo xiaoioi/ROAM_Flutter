@@ -24,7 +24,9 @@ abstract final class RoamColors {
   static const iris = Color(0xFF6EB5FF);
   static const sky = Color(0xFF5EC8FF);
   static const amber = Color(0xFFFFD08A);
-  static const danger = Color(0xFFFF6B6B);
+
+  /// 危险操作：直接取 miuix 规范错误色（浅色 `#E94634`），不再自选粉红。
+  static const danger = Color(0xFFE94634);
 
   static const textPrimary = Color(0xFFF2F7FF);
   static const textSecondary = Color(0xFF9FB0CB);
@@ -51,7 +53,8 @@ abstract final class RoamTheme {
           seedColor: RoamColors.aurora,
           brightness: brightness,
         ).copyWith(
-          primary: isDark ? RoamColors.aurora : RoamColors.auroraDeep,
+          // 浅色 #3482FF / 深色 #277AF7，与 MiuixColors 的两套主色一一对应。
+          primary: isDark ? RoamColors.auroraDeep : RoamColors.aurora,
           secondary: RoamColors.iris,
           surface: isDark ? RoamColors.night : Colors.white,
           error: RoamColors.danger,

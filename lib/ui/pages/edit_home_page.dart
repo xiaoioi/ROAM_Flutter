@@ -493,17 +493,8 @@ class _DimSheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
+              const RoamSheetHandle(),
+              const SizedBox(height: 4),
               Row(
                 children: [
                   const Text(
@@ -662,18 +653,9 @@ class _BackgroundSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 拖动条
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
+          // 拖动条（miuix 尺寸：45×4，24dp 触区）
+          const RoamSheetHandle(),
+          const SizedBox(height: 4),
           const Text(
             '背景设置',
             style: TextStyle(
