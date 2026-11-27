@@ -151,7 +151,12 @@ class HyperosTopBar extends StatelessWidget {
                       // 用库的 textureBlur + 官方 bandBlurMask（
                       // `MiuixGlassTopAppBar` 画 band 的原样结构）；不再叠
                       // bandMaterial 的三层灰调，深色页面上不会发灰。
-                      child: RoamProgressiveBlur(backdrop: miuixLayer),
+                      child: RoamProgressiveBlur(
+                        backdrop: miuixLayer,
+                        // 满强度铺到栏底，剩下 bandOverhang 那段过渡到清晰。
+                        endFraction: 0.82,
+                        curve: 0.85,
+                      ),
                     ),
                   ),
                 ),

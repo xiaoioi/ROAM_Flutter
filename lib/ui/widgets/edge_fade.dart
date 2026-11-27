@@ -45,6 +45,9 @@ class RoamEdgeFade extends StatelessWidget {
       blurRadius: blurRadius,
       fromTop: fromTop,
       strength: strength,
+      // 底栏渐隐只有 32dp，整条都拿来做过渡，不留满强度死糊段。
+      endFraction: 0.95,
+      curve: 1,
     );
   }
 }

@@ -10,6 +10,7 @@ import '../glass/os4_glass_token.dart';
 import '../glass/roam_glass.dart';
 import '../glass/roam_glass_bridge.dart';
 import '../../theme/roam_theme.dart';
+import 'progressive_texture_blur.dart';
 
 /// 全局 miuix 背景采样器，供 MiuixGlass 使用。
 /// 在 App 根部/页面根部用 MiuixLayerBackdropCapture 包住要采样的内容。
@@ -87,16 +88,15 @@ Color roamFrostedFill(bool dark) => dark
     ? RoamColors.cardDark.withValues(alpha: 0.86)
     : Colors.white.withValues(alpha: 0.84);
 
-/// 边缘渐隐：完全按 miuix 自己的写法——`ShaderMask(bandBlurMask)` 套一层
-/// 库的纹理模糊 [MiuixTextureBlur]。
+/// 边缘渐隐：`Modifier.progressiveTextureBlur` 的语义实现。
 ///
-/// 这就是 `MiuixGlassTopAppBar(progressiveBlur: true)` 内部画 band 的原样结构：
-/// 模糊本体由库从快照采样（[MiuixTextureBlur]），淡出由库的
-/// `MiuixGlassTopAppBarDefaults.bandBlurMask()` 负责，项目里不自己拼多档。
+/// `flutter_miuix` 1.4.0（pub 最新）没有移植这个 Modifier，项目内按官方 API
+/// 补了 [MiuixProgressiveTextureBlur] + [ProgressiveBlur]：把半径线性分成多档，
+/// 每档用**库自己的** [MiuixTextureBlur] 绘制，档间用三角权重交叉淡化。
+/// 越靠边越糊、清晰端是全分辨率原图，过渡连续无台阶。
 ///
-/// 不用裸 [BackdropFilter]：`ShaderMask` 会先 `saveLayer`，在这个空图层里
-/// `BackdropFilter` 读不到下层内容，真机上整条带子会透明（v1.0.34 的坑）。
-/// [MiuixTextureBlur] 是自己画采样位图，不受 saveLayer 影响。
+/// 不用裸 [BackdropFilter]：`ShaderMask` 会 `saveLayer`，里面读不到下层像素，
+/// 真机上整条带子会透明。[MiuixTextureBlur] 画的是采样位图，不受影响。
 class RoamProgressiveBlur extends StatelessWidget {
   const RoamProgressiveBlur({
     super.key,
@@ -104,40 +104,46 @@ class RoamProgressiveBlur extends StatelessWidget {
     this.blurRadius = MiuixGlassTopAppBarDefaults.progressiveBlurRadius,
     this.fromTop = true,
     this.strength = 1,
+    this.endFraction = 0.72,
+    this.curve = 0.9,
+    this.levels = 5,
   });
 
   /// 页面级背景采样源（与顶栏玻璃共用同一份快照）。
   final MiuixBackdrop? backdrop;
 
-  /// 模糊半径（dp），与 `bandBlurMask` + `progressiveBlurRadius`（80）一致。
+  /// 满强度端的模糊半径（dp），官方 `progressiveBlurRadius` = 80。
   final double blurRadius;
 
-  /// true：上糊下清；false：下糊上清（底栏）。
+  /// true：上糊下清；false：下糊上清。
   final bool fromTop;
 
   /// 整体强度，0 完全隐藏。
   final double strength;
+
+  /// 过渡结束位置（沿方向的 0..1）。带子越矮取值越接近 1。
+  final double endFraction;
+
+  /// 衰减曲线：<1 让前段更糊、后段更快变清晰。
+  final double curve;
+
+  /// 档数。
+  final int levels;
 
   @override
   Widget build(BuildContext context) {
     if (blurRadius <= 0 || strength <= 0) return const SizedBox.shrink();
     final source = backdrop;
     if (source == null) return const SizedBox.shrink();
-    // 官方的 band 遮罩默认朝下淡出；底栏把同一条渐变镜像过来。
-    final mask = fromTop
-        ? MiuixGlassTopAppBarDefaults.bandBlurMask()
-        : const LinearGradient(
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-            stops: [0, .55, 1],
-            colors: [Color(0xFFFFFFFF), Color(0xFFFFFFFF), Color(0x00FFFFFF)],
-          );
+    final gradient = (fromTop ? ProgressiveBlur.top : ProgressiveBlur.bottom)
+        .copyWith(endFraction: endFraction.clamp(0.05, 0.98), curve: curve);
     return Opacity(
       opacity: strength.clamp(0.0, 1.0),
-      child: ShaderMask(
-        blendMode: BlendMode.dstIn,
-        shaderCallback: mask.createShader,
-        child: MiuixTextureBlur(backdrop: source, blurRadius: blurRadius),
+      child: MiuixProgressiveTextureBlur(
+        backdrop: source,
+        blurRadius: blurRadius,
+        gradient: gradient,
+        levels: levels,
       ),
     );
   }

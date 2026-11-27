@@ -91,41 +91,31 @@ Widget tree = Column(
 - 取样背景快照时向外扩约 3σ margin（配 `TileMode.clamp`），让模糊边缘有真实邻域，避免边缘变暗；但绘制被裁进组件自身边界（`clipRect`），不会溢出（无 shape 时也不溢出）。
 - 首帧快照就绪即出模糊（无异步着色器加载）。
 
-### 边缘渐隐：bandBlurMask + textureBlur
+### 边缘渐隐：progressiveTextureBlur
 
-`flutter_miuix` 1.4.0 **没有** `progressiveTextureBlur`（compose 版有这个
-Modifier）。平台顶栏里替代它的写法，也是本项目边缘渐隐唯一该用的写法：
-**库的 `MiuixTextureBlur` 叠库的 `MiuixGlassTopAppBarDefaults.bandBlurMask()`**。
+官方 compose 版 `miuix-blur` 为边缘渐隐提供的 Modifier 是
+`Modifier.progressiveTextureBlur(backdrop, shape, blurRadius, gradient =
+ProgressiveBlur.Top/Bottom/Left/Right, colors)`：模糊半径沿方向从满强度 **连续
+衰减到 0**，清晰端保持全分辨率。`ProgressiveBlur` 有 `angle` / `startFraction`
+/ `endFraction` / `curve`。
 
-`MiuixGlassTopAppBar` 内部画 band 就是这两件：
-
-```dart
-ShaderMask(
-  blendMode: BlendMode.dstIn,
-  shaderCallback: MiuixGlassTopAppBarDefaults.bandBlurMask().createShader,
-  child: MiuixTextureBlur(
-    backdrop: backdrop,                  // 或 MiuixGlassPanel(bandMaterial(...))
-    blurRadius: MiuixGlassTopAppBarDefaults.progressiveBlurRadius, // 80
-  ),
-)
-```
-
-`bandBlurMask()` 是 `[白, 白, 透明]`（stops `0/.55/1`）的竖向渐变：模糊在
-band 下缘平滑消失，不会出现矩形硬边。底边渐隐把同一条渐变镜像过来
-（`begin: bottomCenter`）。
+> **`flutter_miuix` 1.4.0（pub 最新）没有移植它**。项目内补齐在
+> `lib/ui/widgets/progressive_texture_blur.dart`：`ProgressiveBlur` +
+> `MiuixProgressiveTextureBlur`，参数与官方一一对应。实现方式是把半径线性分成
+> `levels` 档（每档都用库自己的 `MiuixTextureBlur` 画），档间用**三角权重**
+> （partition of unity）交叉淡化，任一位置权重和恒为 1。
 
 三条硬约束：
 
-1. **不要套裸 `BackdropFilter`**：`ShaderMask` 会 `saveLayer`，里面读不到下层
-   像素，真机上整条带子直接透明。`MiuixTextureBlur` 是画采样位图，不受影响。
-2. **不要自己拼多档模糊**（半径 0/N 交叉淡化）来"仿真"渐进模糊：那是项目里
-   自造的管线，参数、遮罩、性能都不归 miuix 管，出问题无从对齐。要渐进观感
-   就等库移植 `progressiveTextureBlur`。
-3. **不要叠 `bandMaterial`**：`puredThinGlass` 自带 `#565656`(luminosity) +
-   `#3F3F3F`(overlay) 三层灰调，深色页面上就是一条灰遮罩。只要模糊，材质传
-   零色调（`Color(0x00000000)` + `srcOver`）或干脆用 `MiuixTextureBlur`。
+1. **端点权重必须是 1**：清晰端那档半径 0（画原图）、满强度端那档半径最大。
+   端点 alpha 写成 0 会让两端露出中间档，观感就是「渐隐不对/顶部反而不糊」。
+2. **不要套裸 `BackdropFilter`**：`ShaderMask` 会 `saveLayer`，里面读不到下层
+   像素，真机上整条带子直接透明。`MiuixTextureBlur` 画的是采样位图，不受影响。
+3. **不要用「单张糊图 + `bandBlurMask` 擦除」冒充**：`MiuixGlassTopAppBar` 的
+   band 是这么画的（模糊恒定 + 下缘淡出），那是栏的用法；边缘渐隐要的是半径
+   随位置衰减，否则中段没有「半糊」的过渡，看起来就是一条糊带淡出。
 
-### Bloom 高光边框### Bloom 高光边框
+### Bloom 高光边框### Bloom 高光边框### Bloom 高光边框
 
 圆角矩形 SDF + 3D 半球 rim 法线 + 方向光，画出被照亮的玻璃边缘；`BlendMode.plus` 叠加。
 
