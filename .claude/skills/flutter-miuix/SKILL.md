@@ -136,7 +136,7 @@ OS4 参数与完整接线示例见 [中文](references/110_os4.zh.md) / [English
   `MiuixGlassPanel(backdrop: ...)`。不要自己套 `BackdropFilter`（尤其在 `ShaderMask` 里），
   那样读不到下层内容：测试引擎整片空白，真机表现为「毛玻璃/渐隐彻底消失」。
 
-### 玻璃接线的四条硬规则
+### 玻璃接线的五条硬规则
 
 1. **`MiuixLayerBackdropCapture` 只包背景，玻璃放捕获树外。** 包住采样同一 backdrop 的
    `MiuixGlassPanel` 会形成自采样（画面拖影）。
@@ -163,6 +163,19 @@ OS4 参数与完整接线示例见 [中文](references/110_os4.zh.md) / [English
    ```
    它们内含「遮罩压暗 → 模糊 → dialogGlass → forTheme 描边」。压栈路由里的弹层读不到页面
    backdrop，必须在**打开之前**在页面 context 里取一次再传进去。
+5. **每个会开弹层的页面都要有采样器**。`MiuixLayerBackdropCapture` + 作用域不只给二级页
+   （`RoamPageScaffold`），首页/编辑页这类自绘布局也要包一层——漏了就是 `backdrop == null`，
+   官方表面直接画不透明 `containerColor`，看起来「弹窗一点都不糊」。
+
+> **为什么弹层不能用 `BackdropFilter`**：`showModalBottomSheet` / `showDialog` 把面板压进
+> 新的 Navigator 路由，Overlay 的每个 entry 是独立合成层；`BackdropFilter` 只能读同一层里
+> 已经画过的像素，跨层读到的是空图层。于是「高斯在跑、但底下什么都没有」，真机表现为面板
+> 一片实色。玻璃必须走快照（`MiuixBackdrop`），不能走实时 `BackdropFilter`。
+
+> **边缘渐隐用渐进模糊，不要用「整块模糊 + alpha 擦除」**：`flutter_miuix` 1.4.0 没有
+> `progressiveTextureBlur`，项目内 `lib/ui/widgets/miuix_progressive_blur.dart` 按官方 API
+> 补了 `MiuixProgressiveTextureBlur`（多档 `MiuixTextureBlur` + 三角权重遮罩）。细节见
+> [references/80_blur.zh.md](references/80_blur.zh.md) 的「渐进模糊」一节。
 
 ## 组件目录索引
 

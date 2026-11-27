@@ -10,6 +10,7 @@ import '../glass/os4_glass_token.dart';
 import '../glass/roam_glass.dart';
 import '../glass/roam_glass_bridge.dart';
 import '../../theme/roam_theme.dart';
+import 'miuix_progressive_blur.dart';
 
 /// 全局 miuix 背景采样器，供 MiuixGlass 使用。
 /// 在 App 根部/页面根部用 MiuixLayerBackdropCapture 包住要采样的内容。
@@ -44,6 +45,7 @@ abstract final class GlassRuntime {
     if (performance.value) return RoamGlassMode.performance;
     return RoamGlassMode.standard;
   }
+
   static final ValueNotifier<bool> rimLight = ValueNotifier(true);
   static final ValueNotifier<bool> edgeFade = ValueNotifier(true);
   static final ValueNotifier<bool> performance = ValueNotifier(false);
@@ -86,52 +88,29 @@ Color roamFrostedFill(bool dark) => dark
     ? RoamColors.cardDark.withValues(alpha: 0.86)
     : Colors.white.withValues(alpha: 0.84);
 
-/// 只模糊、不叠色的栏材质。
+/// 边缘渐隐：`miuix-blur` 的渐进模糊（`progressiveTextureBlur`）。
 ///
-/// miuix 的 `puredThinGlass` / `actionBarMask` 都是「模糊 + 三层混色」，深色那套
-/// 是 `#565656`(luminosity) + `#3F3F3F`(overlay)，铺在页面上就是一条灰带。
-/// 边缘渐隐只要「糊」，不要「压暗」，所以这里给零色调材质：三层混色收敛成一层
-/// 全透明 srcOver，`blurRadius` 照常走库的低分辨率高斯管线。
-///
-/// 必须走 [MiuixGlassPanel] 而不是自己套 `BackdropFilter`：库的玻璃是
-/// 「采样快照 → 低分辨率高斯 → 混色 → 折射」，直接 `BackdropFilter` 在
-/// `ShaderMask` 的 saveLayer 里读不到下层内容，真机上会完全看不见（v1.0.34 的坑）。
-MiuixGlassMaterial roamBlurOnlyMaterial(double blurRadius) {
-  final key = blurRadius.toStringAsFixed(2);
-  return _blurOnlyMaterials.putIfAbsent(
-    key,
-    () => MiuixGlassMaterial(
-      blurRadius: blurRadius,
-      first: const MiuixGlassColorLayer(
-        Color(0x00000000),
-        MiuixGlassColorBlendMode.srcOver,
-      ),
-    ),
-  );
-}
-
-final Map<String, MiuixGlassMaterial> _blurOnlyMaterials = {};
-
-/// 纯渐进模糊：只糊，不改色。
-///
-/// 贴边的那一条用 `bandBlurMask()` 让模糊在下缘消融（上缘实、下缘虚），
-/// 中间没有任何色调层——这就是 miuix 的 `glassTopAppBar` band 去掉
-/// `bandBrush` 之后的形状。
+/// `flutter_miuix` 1.4.0 还没移植这个 Modifier，所以项目内按同一份 API 补了
+/// [MiuixProgressiveTextureBlur]：多档 [MiuixTextureBlur] + 沿方向的三角权重
+/// 遮罩，越靠边缘越糊、清晰端保持全分辨率。不再自己拼「整块模糊 + alpha 擦除」，
+/// 那样只是把一张糊图渐隐掉，中段没有「半糊」的过渡。
 class RoamProgressiveBlur extends StatelessWidget {
   const RoamProgressiveBlur({
     super.key,
     this.backdrop,
-    this.sigma = 32,
+    this.blurRadius = MiuixGlassTopAppBarDefaults.progressiveBlurRadius,
     this.fromTop = true,
     this.strength = 1,
+    this.endFraction = 0.62,
+    this.curve = 0.75,
   });
 
   /// 页面级背景采样源（与顶栏玻璃共用同一份快照）。
   final MiuixBackdrop? backdrop;
 
-  /// 高斯半径（dp）。miuix 的 `progressiveBlurRadius = 80` 是半径不是 sigma，
-  /// 80 半径的观感约等于 32 的 sigma，但后者便宜得多。
-  final double sigma;
+  /// 满强度处的模糊半径（dp），与 `progressiveTextureBlur` 的 `blurRadius` 同义。
+  /// 取官方 `progressiveBlurRadius`（80），与 `MiuixGlassTopAppBar` 一致。
+  final double blurRadius;
 
   /// true：上糊下清；false：下糊上清。
   final bool fromTop;
@@ -139,34 +118,26 @@ class RoamProgressiveBlur extends StatelessWidget {
   /// 整体强度，0 完全隐藏。
   final double strength;
 
+  /// 满强度区在整条带子上的占比：0.62 表示前 62% 基本全糊，之后线性衰减到清晰。
+  final double endFraction;
+
+  /// 半径衰减曲线，<1 让满强度区更「顶」、过渡更集中在清晰端。
+  final double curve;
+
   @override
   Widget build(BuildContext context) {
-    if (sigma <= 0 || strength <= 0) return const SizedBox.shrink();
-    final mask = fromTop
-        ? MiuixGlassTopAppBarDefaults.bandBlurMask()
-        : const LinearGradient(
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-            stops: [0, .55, 1],
-            colors: [Color(0xFFFFFFFF), Color(0xFFFFFFFF), Color(0x00FFFFFF)],
-          );
+    if (blurRadius <= 0 || strength <= 0) return const SizedBox.shrink();
+    final source = backdrop;
+    if (source == null) return const SizedBox.shrink();
+    final gradient = (fromTop ? ProgressiveBlur.top : ProgressiveBlur.bottom)
+        .copyWith(endFraction: endFraction.clamp(0.05, 0.98), curve: curve);
     return Opacity(
       opacity: strength.clamp(0.0, 1.0),
-      child: ShaderMask(
-        blendMode: BlendMode.dstIn,
-        shaderCallback: (bounds) => mask.createShader(bounds),
-        child: MiuixGlassPanel(
-          backdrop: backdrop,
-          material: roamBlurOnlyMaterial(sigma),
-          shape: const MiuixGlassShape(cornerRadius: 0),
-          stroke: null,
-          shadow: null,
-          shading: false,
-          // 快照未就绪时不要退回 #2C2C2C 的兜底色（那就是「灰」的来源），
-          // 宁可这一帧什么都没有。
-          fill: Colors.transparent,
-          child: const SizedBox.expand(),
-        ),
+      child: MiuixProgressiveTextureBlur(
+        backdrop: source,
+        blurRadius: blurRadius,
+        gradient: gradient,
+        levels: 4,
       ),
     );
   }

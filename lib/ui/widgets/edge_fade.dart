@@ -9,15 +9,17 @@ import 'glass_controls.dart';
 ///
 /// 就是 [RoamProgressiveBlur] 的薄封装，保留原来的调用签名。
 ///
-/// 之前这里走的是 miuix 的 `bandMaterial`（高斯 + 三层灰调），深色页面上
-/// 会呈现为一条发灰的带子，像是「渐隐上盖了一层遮罩」。现在只做模糊，
-/// 淡出仍由官方的 `bandBlurMask()` 完成，模糊在带子下缘连续消融。
+/// 走 `miuix-blur` 的渐进模糊（`progressiveTextureBlur` 语义）：越靠边缘越糊，
+/// 清晰端是全分辨率原图，所以不存在「带子下缘一条硬边」。
+///
+/// 不再用 miuix 的 `bandMaterial`：它自带三层灰调（深色 #565656 + #3F3F3F），
+/// 铺在深色页面上就是一条灰遮罩。这里只做模糊，不叠任何颜色。
 class RoamEdgeFade extends StatelessWidget {
   const RoamEdgeFade({
     super.key,
     this.backdrop,
     this.fromTop = true,
-    this.blurRadius = 32,
+    this.blurRadius = MiuixGlassTopAppBarDefaults.progressiveBlurRadius,
     this.strength = 1,
   });
 
@@ -27,7 +29,7 @@ class RoamEdgeFade extends StatelessWidget {
   /// true：顶边（上糊下清）；false：底边（下糊上清）。
   final bool fromTop;
 
-  /// 高斯 sigma（dp）。
+  /// 满强度处的模糊半径（dp），交给库的 [MiuixTextureBlur]。
   final double blurRadius;
 
   /// 渐变强度：0 完全不显示，1 满强度。
@@ -40,9 +42,12 @@ class RoamEdgeFade extends StatelessWidget {
     }
     return RoamProgressiveBlur(
       backdrop: backdrop,
-      sigma: blurRadius,
+      blurRadius: blurRadius,
       fromTop: fromTop,
       strength: strength,
+      // 底栏渐隐只有 32dp，整条都拿来做过渡，不要留一段满强度死糊。
+      endFraction: 0.95,
+      curve: 1,
     );
   }
 }

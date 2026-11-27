@@ -8,22 +8,25 @@ import 'glass_controls.dart';
 
 /// 弹层（底部抽屉 / 对话框）统一使用的玻璃表面。
 ///
-/// 标准态**直接用 miuix 的官方表面函数**：
-///  - 底部抽屉 → `miuixGlassBottomSheetSurface`
-///  - 对话框 → `miuixGlassDialogSurface`
+/// 标准态直接用库自己的表面构建器：
+///  - 底部抽屉 → [miuixGlassBottomSheetSurface]
+///  - 对话框   → [miuixGlassDialogSurface]
 ///
-/// 它们就是 `MiuixGlassBottomSheet` / `MiuixGlassDialog` 内部用的那一份：
-/// 先按遮罩色把采样到的背景压暗，再走 dialogGlass 三层材质 + forTheme 高光描边，
-/// 顶部圆角、过拖延展去描边这些细节都在里面，不需要外面再拼一遍。
+/// 两者都是「scrim 预压暗的 backdrop 快照 → dialogGlass 材质混色 → forTheme
+/// 高光描边」这条官方管线，面板和 miuix 自己的 GlassBottomSheet / GlassDialog
+/// 一模一样，不再自己套 [BackdropFilter]。
 ///
-/// [backdrop] 由页面外壳通过 [RoamBackdropScope] 交出。压栈路由里的弹层自己
-/// 读不到页面捕获器，所以必须在打开之前取一次；拿不到时传 null，官方表面会
-/// 用 `containerColor` 兜底（这里给半透明，至少还是磨砂而不是实色块）。
+/// 为什么不再用 `BackdropFilter`：弹层压在新的 Navigator 路由里，Overlay 的每个
+/// entry 都是独立的合成层，`BackdropFilter` 只能读同一层里已经画过的像素，跨层
+/// 读到的是空图层——表现就是「弹框一点都不糊」，只会露出下面那层半透明 fill。
+///
+/// [backdrop] 由调用方在**打开弹层之前**从 [RoamBackdropScope] 取（弹层自己的
+/// context 读不到页面级采样器）。没有 backdrop 时库会退回不透明兜底色。
 ///
 /// 三态（跟随「材质显示效果」/「高斯模糊效果」）：
 ///  - 材质关闭 → 纯色，不模糊；
 ///  - 性能优先 → 半透明磨砂 + 轮廓光（白边/浅黑边按明暗取）；
-///  - 标准 → 官方玻璃表面。
+///  - 标准     → 官方玻璃表面。
 class RoamPopupGlass extends StatelessWidget {
   const RoamPopupGlass({
     super.key,
@@ -35,7 +38,7 @@ class RoamPopupGlass extends StatelessWidget {
 
   final Widget child;
 
-  /// 页面级背景采样源；为空时官方表面用半透明兜底色。
+  /// 页面级背景采样源；为空时官方表面用不透明兜底色。
   final MiuixBackdrop? backdrop;
 
   /// true：对话框（四角 28）；false：底部抽屉（只有上方两角）。
@@ -84,22 +87,45 @@ class RoamPopupGlass extends StatelessWidget {
       );
     }
 
-    // 标准：官方表面（遮罩压暗 → dialogGlass 材质 → 描边）。
-    // 没有快照时用半透明兜底色，而不是主题 background（那是一块实色）。
-    final fallback = (dark ? RoamColors.cardDark : Colors.white).withValues(
-      alpha: 0.72,
-    );
-    final scrim = MiuixGlassDialogDefaults.scrimColor;
+    // 标准：官方表面。模糊半径跟随「模糊度」滑杆，描边跟随「轮廓光」开关。
+    final blur =
+        (MiuixGlassMaterials.dialogGlass(dark).blurRadius *
+                GlassRuntime.blurScale.value)
+            .clamp(0.0, MiuixBlurDefaults.maxBlurRadius);
+    final material = MiuixGlassMaterials.dialogGlass(dark)
+        .copyWith(blurRadius: blur);
+    final rim = GlassRuntime.rimLight.value;
+    final stroke = rim ? MiuixGlassStrokes.forTheme(dark) : null;
+    final containerColor = dark ? RoamColors.cardDark : RoamColors.cardLight;
+
     if (isDialog) {
       return miuixGlassDialogSurface(
         backdrop: backdrop,
-        containerColor: fallback,
-      )(context, 28, scrim, 1, child);
+        material: material,
+        stroke: stroke,
+        showStroke: rim,
+        containerColor: containerColor,
+      )(
+        context,
+        _shapeRadius.topLeft.x,
+        MiuixGlassDialogDefaults.scrimColor,
+        1,
+        child,
+      );
     }
     return miuixGlassBottomSheetSurface(
       backdrop: backdrop,
-      containerColor: fallback,
-    )(context, MiuixBottomSheetDefaults.cornerRadius, scrim, false, child);
+      material: material,
+      stroke: stroke,
+      showStroke: rim,
+      containerColor: containerColor,
+    )(
+      context,
+      MiuixBottomSheetDefaults.cornerRadius,
+      MiuixGlassBottomSheetDefaults.scrimColor,
+      false,
+      child,
+    );
   }
 
   BorderRadius get _shapeRadius => isDialog

@@ -31,7 +31,7 @@ class GlassSearchEntry {
 /// 还原的结构（见 compose-miuix `GlassSearchOverlay.kt`）：
 ///
 ///  - 顶部一条 **progressive blur** 过渡带，高度盖住状态栏 + 搜索行；
-///    模糊和顶栏用同一条纯模糊带（`RoamProgressiveBlur` + `bandBlurMask`）；
+///    模糊和顶栏用同一条渐进模糊带（`RoamProgressiveBlur`）；
 ///  - 胶囊形玻璃搜索框（`popupViewGlass` 材质 + `small` 描边 + `floating` 投影），
 ///    前置放大镜、输入非空时给清除钮；
 ///  - 右侧「取消」圆钮（[MiuixGlassIconButton]），点它或按返回收起；
@@ -380,7 +380,7 @@ class _RoamGlassSearchOverlayState extends State<RoamGlassSearchOverlay>
   }
 }
 
-/// 顶部渐进模糊带：纯模糊 + `bandBlurMask` 消融，不叠任何色调。
+/// 顶部渐进模糊带：纯模糊，半径沿竖直方向衰减到 0，不叠任何色调。
 class _ProgressiveBlurBand extends StatelessWidget {
   const _ProgressiveBlurBand({required this.backdrop, required this.isDark});
 
@@ -395,6 +395,6 @@ class _ProgressiveBlurBand extends StatelessWidget {
         GlassRuntime.performance.value) {
       return const SizedBox.shrink();
     }
-    return RoamProgressiveBlur(backdrop: backdrop, sigma: 32);
+    return RoamProgressiveBlur(backdrop: backdrop);
   }
 }

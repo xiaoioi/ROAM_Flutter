@@ -12,6 +12,7 @@ import 'package:flutter_miuix/miuix.dart';
 import '../../theme/roam_theme.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/hyperos_top_bar.dart';
+import '../widgets/roam_backdrop_scope.dart';
 import '../widgets/roam_sheet.dart';
 
 /// 关于页。
@@ -93,140 +94,146 @@ class _AboutPageState extends State<AboutPage> {
     final heroTop = media.padding.top + 44;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF07060F) : const Color(0xFFF7F5FC),
-      body: Stack(
-        children: [
-          // 背景：OS3 前景模糊流动色光，卡片玻璃采样它。
-          Positioned.fill(
-            child: MiuixLayerBackdropCapture(
-              backdrop: _backdrop,
-              pixelRatio: 1,
-              child: _FlowBackground(isDark: isDark),
-            ),
-          ),
-          // 内容：上边距留出 hero 那一块，滚动时从 hero 底下穿过去。
-          ListView(
-            controller: _scroll,
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            padding: EdgeInsets.fromLTRB(
-              0,
-              heroTop + _heroHeight + 10,
-              0,
-              32 + media.padding.bottom,
-            ),
-            children: [
-              _card(
-                isDark: isDark,
-                children: [
-                  _AboutRow(
-                    title: '软件更新',
-                    value: '已是最新',
-                    onTap: () => _checkUpdate(context),
-                  ),
-                  _AboutRow(
-                    title: '增强特性',
-                    value: '${AboutPage._enhancements.length} 项',
-                    onTap: () => _showEnhancements(context),
-                  ),
-                ],
+      backgroundColor: isDark
+          ? const Color(0xFF07060F)
+          : const Color(0xFFF7F5FC),
+      // 弹层（增强特性 / 更新说明）打开前会从这个作用域取采样源。
+      body: RoamBackdropScope(
+        backdrop: _backdrop,
+        child: Stack(
+          children: [
+            // 背景：OS3 前景模糊流动色光，卡片玻璃采样它。
+            Positioned.fill(
+              child: MiuixLayerBackdropCapture(
+                backdrop: _backdrop,
+                pixelRatio: 1,
+                child: _FlowBackground(isDark: isDark),
               ),
-              _card(
-                isDark: isDark,
-                children: [
-                  _AboutRow(
-                    title: '软件与版本信息',
-                    value: AboutPage._releaseLabel,
-                    onTap: () => _showSoftwareInfo(context),
-                  ),
-                  _AboutRow(
-                    title: '设备与系统',
-                    value: _systemName(),
-                    onTap: () => _showDeviceInfo(context),
-                  ),
-                ],
+            ),
+            // 内容：上边距留出 hero 那一块，滚动时从 hero 底下穿过去。
+            ListView(
+              controller: _scroll,
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
               ),
-              _card(
-                isDark: isDark,
-                children: [
-                  _AboutRow(
-                    title: '开源许可',
-                    value: 'Apache-2.0',
-                    onTap: () => _sheet(
-                      context,
-                      '开源许可',
-                      '本应用基于 Flutter 构建，界面组件来自 flutter_miuix'
-                          '（Apache-2.0 / 上游 compose-miuix-ui），'
-                          '网页内核为系统 WebView。',
-                    ),
-                  ),
-                  _AboutRow(
-                    title: '第三方许可',
-                    onTap: () => _sheet(
-                      context,
-                      '第三方许可',
-                      'Flutter · BSD-3-Clause\n'
-                          'flutter_miuix · Apache-2.0\n'
-                          'webview_flutter · BSD-3-Clause\n'
-                          'shared_preferences · BSD-3-Clause\n'
-                          'Android System WebView · 随系统分发',
-                    ),
-                  ),
-                  _AboutRow(
-                    title: '备案与著作权',
-                    value: '软著登字第17704850号',
-                    onTap: () => _sheet(
-                      context,
-                      '备案与著作权',
-                      'App 备案：已按国家规定完成备案。\n'
-                          '著作权登记：软著登字第17704850号。',
-                    ),
-                  ),
-                ],
+              padding: EdgeInsets.fromLTRB(
+                0,
+                heroTop + _heroHeight + 10,
+                0,
+                32 + media.padding.bottom,
               ),
-              const SizedBox(height: 22),
-              Center(
-                child: Text(
-                  '星环团队荣誉出品 · NWind 北风架构 Xe',
-                  style: TextStyle(
-                    fontSize: 12,
-                    letterSpacing: 0.3,
-                    color: fg.withValues(alpha: 0.34),
+              children: [
+                _card(
+                  isDark: isDark,
+                  children: [
+                    _AboutRow(
+                      title: '软件更新',
+                      value: '已是最新',
+                      onTap: () => _checkUpdate(context),
+                    ),
+                    _AboutRow(
+                      title: '增强特性',
+                      value: '${AboutPage._enhancements.length} 项',
+                      onTap: () => _showEnhancements(context),
+                    ),
+                  ],
+                ),
+                _card(
+                  isDark: isDark,
+                  children: [
+                    _AboutRow(
+                      title: '软件与版本信息',
+                      value: AboutPage._releaseLabel,
+                      onTap: () => _showSoftwareInfo(context),
+                    ),
+                    _AboutRow(
+                      title: '设备与系统',
+                      value: _systemName(),
+                      onTap: () => _showDeviceInfo(context),
+                    ),
+                  ],
+                ),
+                _card(
+                  isDark: isDark,
+                  children: [
+                    _AboutRow(
+                      title: '开源许可',
+                      value: 'Apache-2.0',
+                      onTap: () => _sheet(
+                        context,
+                        '开源许可',
+                        '本应用基于 Flutter 构建，界面组件来自 flutter_miuix'
+                            '（Apache-2.0 / 上游 compose-miuix-ui），'
+                            '网页内核为系统 WebView。',
+                      ),
+                    ),
+                    _AboutRow(
+                      title: '第三方许可',
+                      onTap: () => _sheet(
+                        context,
+                        '第三方许可',
+                        'Flutter · BSD-3-Clause\n'
+                            'flutter_miuix · Apache-2.0\n'
+                            'webview_flutter · BSD-3-Clause\n'
+                            'shared_preferences · BSD-3-Clause\n'
+                            'Android System WebView · 随系统分发',
+                      ),
+                    ),
+                    _AboutRow(
+                      title: '备案与著作权',
+                      value: '软著登字第17704850号',
+                      onTap: () => _sheet(
+                        context,
+                        '备案与著作权',
+                        'App 备案：已按国家规定完成备案。\n'
+                            '著作权登记：软著登字第17704850号。',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                Center(
+                  child: Text(
+                    '星环团队荣誉出品 · NWind 北风架构 Xe',
+                    style: TextStyle(
+                      fontSize: 12,
+                      letterSpacing: 0.3,
+                      color: fg.withValues(alpha: 0.34),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Center(
-                child: Text(
-                  'v${AboutPage.versionName} (${AboutPage.versionCode})',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: sub.withValues(alpha: 0.5),
+                const SizedBox(height: 6),
+                Center(
+                  child: Text(
+                    'v${AboutPage.versionName} (${AboutPage.versionCode})',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: sub.withValues(alpha: 0.5),
+                    ),
                   ),
                 ),
+              ],
+            ),
+            // hero：固定不动，滚动时淡出。
+            Positioned(
+              top: heroTop,
+              left: 0,
+              right: 0,
+              child: _Hero(
+                progress: _progress,
+                isDark: isDark,
+                title: '星环 · ROAM',
+                version: 'v${AboutPage.versionName} (${AboutPage.versionCode})',
               ),
-            ],
-          ),
-          // hero：固定不动，滚动时淡出。
-          Positioned(
-            top: heroTop,
-            left: 0,
-            right: 0,
-            child: _Hero(
+            ),
+            _AboutTopBar(
               progress: _progress,
               isDark: isDark,
-              title: '星环 · ROAM',
-              version: 'v${AboutPage.versionName} (${AboutPage.versionCode})',
+              title: '关于',
+              backdrop: _backdrop,
             ),
-          ),
-          _AboutTopBar(
-            progress: _progress,
-            isDark: isDark,
-            title: '关于',
-            backdrop: _backdrop,
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -252,8 +259,9 @@ class _AboutPageState extends State<AboutPage> {
                 Container(
                   height: 1,
                   margin: const EdgeInsets.only(left: 18),
-                  color: (isDark ? Colors.white : Colors.black)
-                      .withValues(alpha: isDark ? 0.07 : 0.055),
+                  color: (isDark ? Colors.white : Colors.black).withValues(
+                    alpha: isDark ? 0.07 : 0.055,
+                  ),
                 ),
               children[i],
             ],
@@ -414,7 +422,7 @@ class _AboutTopBar extends StatelessWidget {
                 child: IgnorePointer(
                   child: Opacity(
                     opacity: barAlpha,
-                    child: RoamProgressiveBlur(backdrop: backdrop, sigma: 32),
+                    child: RoamProgressiveBlur(backdrop: backdrop, blurRadius: 80),
                   ),
                 ),
               ),
@@ -767,17 +775,34 @@ class _FlowPainter extends CustomPainter {
         );
       }
     } else {
-      blob(w * (0.16 + 0.05 * math.sin(t)), h * (0.14 + 0.03 * math.cos(t)),
-          w * 0.95, const Color(0xFFB7D2FF), 0.62);
-      blob(w * (0.92 + 0.04 * math.cos(t + 1.2)),
-          h * (0.24 + 0.04 * math.sin(t + 1.2)), w * 0.8,
-          const Color(0xFFCBD9FF), 0.55);
-      blob(w * (0.74 + 0.05 * math.sin(t + 2.4)),
-          h * (0.58 + 0.04 * math.cos(t + 2.4)), w * 0.9,
-          const Color(0xFFD9CCFF), 0.42);
-      blob(w * (0.10 + 0.04 * math.cos(t + 3.6)),
-          h * (0.80 + 0.03 * math.sin(t + 3.6)), w * 0.85,
-          const Color(0xFFBFD4FF), 0.45);
+      blob(
+        w * (0.16 + 0.05 * math.sin(t)),
+        h * (0.14 + 0.03 * math.cos(t)),
+        w * 0.95,
+        const Color(0xFFB7D2FF),
+        0.62,
+      );
+      blob(
+        w * (0.92 + 0.04 * math.cos(t + 1.2)),
+        h * (0.24 + 0.04 * math.sin(t + 1.2)),
+        w * 0.8,
+        const Color(0xFFCBD9FF),
+        0.55,
+      );
+      blob(
+        w * (0.74 + 0.05 * math.sin(t + 2.4)),
+        h * (0.58 + 0.04 * math.cos(t + 2.4)),
+        w * 0.9,
+        const Color(0xFFD9CCFF),
+        0.42,
+      );
+      blob(
+        w * (0.10 + 0.04 * math.cos(t + 3.6)),
+        h * (0.80 + 0.03 * math.sin(t + 3.6)),
+        w * 0.85,
+        const Color(0xFFBFD4FF),
+        0.45,
+      );
     }
 
     // 顶部压暗 / 提亮，让状态栏与顶栏图标有对比。

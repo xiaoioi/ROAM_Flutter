@@ -91,6 +91,48 @@ Widget tree = Column(
 - 取样背景快照时向外扩约 3σ margin（配 `TileMode.clamp`），让模糊边缘有真实邻域，避免边缘变暗；但绘制被裁进组件自身边界（`clipRect`），不会溢出（无 shape 时也不溢出）。
 - 首帧快照就绪即出模糊（无异步着色器加载）。
 
+### 渐进模糊（progressiveTextureBlur）
+
+> **`flutter_miuix` 1.4.0 没有移植这个 Modifier**。官方 compose 版
+> `miuix-blur` 提供 `Modifier.progressiveTextureBlur(backdrop, shape,
+> blurRadius, gradient = ProgressiveBlur.Top/Bottom/Left/Right, colors)`：
+> 模糊强度沿方向从满强度连续过渡到零，清晰端保持全分辨率，专给栏和边缘
+> 渐隐用（官方明确不建议铺大面积，清晰端每帧多一个全分辨率 pass）。
+>
+> 项目内的补位实现：`lib/ui/widgets/miuix_progressive_blur.dart` 的
+> `MiuixProgressiveTextureBlur` + `ProgressiveBlur`，API 与官方一一对应
+> （`angle` / `startFraction` / `endFraction` / `curve`，`copyWith`）。
+> 内部不引第三方渲染，而是叠 `levels` 档 **库自己的 `MiuixTextureBlur`**
+> （半径 0 → blurRadius 线性分档），每档套一条沿方向的三角权重 `ShaderMask`
+> （`dstIn`），相邻档交叉淡化。清晰端是第 0 档（半径 0），画原图，所以和
+> 周围内容无缝衔接。
+
+| 参数 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `backdrop` | `MiuixBackdrop` | 必填 | 背景提供者 |
+| `shape` | `ShapeBorder?` | `null` | 裁剪形状 |
+| `blurRadius` | `double` | `20` | 满强度处的半径（dp） |
+| `levels` | `int` | `4` | 档数；4 档在 80dp 下已看不出台阶 |
+| `gradient` | `ProgressiveBlur` | `ProgressiveBlur.top` | 方向与过渡区间 |
+| `colors` | `BlurColors` | `BlurColors()` | 模糊后颜色调整（原样透传给每档） |
+| `enabled` | `bool` | `true` | false 时只画 child |
+
+`ProgressiveBlur` 四个预设：
+
+| 预设 | angle | 效果 |
+|---|---|---|
+| `top` | 90° | 顶部最强，往下变清晰 |
+| `bottom` | 270° | 底部最强，往上变清晰 |
+| `left` | 0° | 左侧最强 |
+| `right` | 180° | 右侧最强 |
+
+`ratioAt(t)` 给某点的半径比例（1=满强度），`tAt(ratio)` 是其反函数；
+`copyWith(startFraction:, endFraction:, curve:)` 调区间和衰减曲线。
+
+**不要**用「整块 `MiuixTextureBlur` + `bandBlurMask` 擦除」来近似：那只是把
+一张满强度糊图渐隐掉，中段永远没有「半糊」的过渡，观感是一条糊带淡出，
+不是渐进模糊。
+
 ### Bloom 高光边框
 
 圆角矩形 SDF + 3D 半球 rim 法线 + 方向光，画出被照亮的玻璃边缘；`BlendMode.plus` 叠加。

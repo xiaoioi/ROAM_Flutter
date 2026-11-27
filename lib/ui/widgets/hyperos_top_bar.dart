@@ -44,7 +44,8 @@ class HyperosBarAction {
 ///
 /// 顶部的渐进模糊带（band）只做模糊、不叠色调：miuix 的 `bandMaterial`
 /// 自带三层灰调（深色 #565656 + #3F3F3F），铺在深色页面上就是一条灰遮罩。
-/// 淡出仍用官方的 `bandBlurMask()`，所以下缘依旧是连续消融的。
+/// 模糊本身是 `progressiveTextureBlur` 语义（80dp 满强度 → 清晰端 0），
+/// 所以下缘是半径连续衰减，不是一张糊图硬切。
 class HyperosTopBar extends StatelessWidget {
   const HyperosTopBar({
     super.key,
@@ -63,7 +64,8 @@ class HyperosTopBar extends StatelessWidget {
   static const height = 64.0;
 
   /// 官方 SmallTopAppBar 的内容高度。
-  static const barContentHeight = MiuixTopAppBarDefaults.smallTopAppBarCenterHeight;
+  static const barContentHeight =
+      MiuixTopAppBarDefaults.smallTopAppBarCenterHeight;
 
   /// 圆钮直径（官方 GlassTopAppBarDefaults.buttonSize）。
   static const circleSize = MiuixGlassTopAppBarDefaults.buttonSize;
@@ -111,9 +113,7 @@ class HyperosTopBar extends StatelessWidget {
     final radius = MiuixGlassTopAppBarDefaults.rampDistance;
 
     return TweenAnimationBuilder<double>(
-      duration: animate
-          ? MiuixGlassMotion.topBarButtonFloat
-          : Duration.zero,
+      duration: animate ? MiuixGlassMotion.topBarButtonFloat : Duration.zero,
       tween: Tween(begin: scrolled ? 1 : 0, end: scrolled ? 1 : 0),
       builder: (context, rawProgress, _) {
         final progress = enabled ? rawProgress : 0.0;
@@ -151,9 +151,13 @@ class HyperosTopBar extends StatelessWidget {
                       // 只糊不改色：miuix 的 bandMaterial 自带三层灰调
                       // （深色 #565656 + #3F3F3F），在深色页面上就是一条
                       // 灰遮罩；渐隐本来就只该让内容糊掉，不能顺带压暗。
+                      //
+                      // endFraction 按「状态栏 + 栏高」占整条带子的比例给：
+                      // 这段保持满强度，剩下的 bandOverhang 才过渡到清晰。
                       child: RoamProgressiveBlur(
                         backdrop: miuixLayer,
-                        sigma: 32,
+                        endFraction: 0.78,
+                        curve: 0.7,
                       ),
                     ),
                   ),

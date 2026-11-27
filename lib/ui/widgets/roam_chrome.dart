@@ -147,7 +147,6 @@ class _RoamPageScaffoldState extends State<RoamPageScaffold> {
                       child: RoamEdgeFade(
                         backdrop: _backdrop,
                         fromTop: false,
-                        blurRadius: 24,
                         strength: 0.9,
                       ),
                     ),

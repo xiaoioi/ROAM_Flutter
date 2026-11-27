@@ -165,32 +165,15 @@ class MaterialEffectsPage extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 4),
-                        SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackHeight: 4,
-                            thumbShape: const RoundSliderThumbShape(
-                              enabledThumbRadius: 8,
-                            ),
-                            overlayShape: const RoundSliderOverlayShape(
-                              overlayRadius: 16,
-                            ),
-                            activeTrackColor: accent,
-                            inactiveTrackColor:
-                                (isDark
-                                        ? RoamColors.textPrimary
-                                        : RoamColors.dayInk)
-                                    .withValues(alpha: 0.12),
-                            thumbColor: accent,
-                            overlayColor: accent.withValues(alpha: 0.15),
-                          ),
-                          child: Slider(
-                            value: settings.glassBlur.clamp(0.5, 2.0),
-                            min: 0.5,
-                            max: 2.0,
-                            divisions: 15,
-                            onChanged: (value) => controller.updateSettings(
-                              settings.copyWith(glassBlur: value),
-                            ),
+                        // 拖动条直接用 miuix 的 Slider（轨道 / 滑块 / 触感都是官方的），
+                        // 不再套 Material 的 SliderTheme 自己画。
+                        MiuixSlider(
+                          value: settings.glassBlur.clamp(0.5, 2.0),
+                          min: 0.5,
+                          max: 2.0,
+                          steps: 15,
+                          onValueChanged: (value) => controller.updateSettings(
+                            settings.copyWith(glassBlur: value),
                           ),
                         ),
                       ],

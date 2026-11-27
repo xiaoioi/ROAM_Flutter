@@ -3,6 +3,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_miuix/miuix.dart';
 
+import 'glass_controls.dart';
+
 /// 把当前页面的背景采样源（[MiuixLayerBackdrop]）向下暴露给弹层。
 ///
 /// miuix 的玻璃组件（`GlassBottomSheet` / `GlassDialog` / `GlassIconButton`）
@@ -32,11 +34,16 @@ class RoamBackdropScope extends InheritedWidget {
   static MiuixLayerBackdrop? maybeOf(BuildContext context) =>
       maybeScopeOf(context)?.backdrop;
 
-  /// 适合交给 miuix 做折射采样的源；不可信时返回 null（调用方走实时模糊）。
+  /// 适合交给 miuix 做折射采样的源；不可信时返回 null。
+  ///
+  /// 没有作用域时回退到全局采样器 [miuixBackdrop]：浏览器外壳
+  /// （`browser_shell`）的菜单 / 标签 / 搜索抽屉是从 State 的 context 打开的，
+  /// 而全局捕获器在它下面，查不到作用域——不回退的话这些抽屉全都没有
+  /// backdrop，官方表面只能画不透明兜底色。
   static MiuixBackdrop? samplingOf(BuildContext context) {
     final scope = maybeScopeOf(context);
-    if (scope == null || !scope.trustSnapshot) return null;
-    return scope.backdrop;
+    if (scope != null) return scope.trustSnapshot ? scope.backdrop : null;
+    return miuixBackdrop.hasContent ? miuixBackdrop : null;
   }
 
   @override

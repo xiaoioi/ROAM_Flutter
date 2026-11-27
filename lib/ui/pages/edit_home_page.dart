@@ -28,6 +28,18 @@ class EditHomePage extends StatefulWidget {
 }
 
 class _EditHomePageState extends State<EditHomePage> {
+  /// 页面级背景采样器：壁纸预览上的玻璃抽屉从这里取快照。
+  ///
+  /// 首页不像二级页那样走 `RoamPageScaffold`，之前没有采样器，弹层拿到的
+  /// backdrop 是 null，miuix 的玻璃只能画不透明兜底色——「弹出框一点都不糊」。
+  final MiuixLayerBackdrop _backdrop = MiuixLayerBackdrop();
+
+  @override
+  void dispose() {
+    _backdrop.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -35,85 +47,94 @@ class _EditHomePageState extends State<EditHomePage> {
       builder: (context, _) {
         return Scaffold(
           backgroundColor: Colors.black,
-          body: SafeArea(
-            child: Column(
-              children: [
-                // ---- 顶部：退出 / 编辑主界面 / 应用 ----
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-                  child: Row(
-                    children: [
-                      PressableScale(
-                        scale: 0.92,
-                        onTap: () => Navigator.of(context).maybePop(),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 8,
+          body: RoamBackdropScope(
+            backdrop: _backdrop,
+            child: MiuixLayerBackdropCapture(
+              backdrop: _backdrop,
+              pixelRatio: 1,
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    // ---- 顶部：退出 / 编辑主界面 / 应用 ----
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                      child: Row(
+                        children: [
+                          PressableScale(
+                            scale: 0.92,
+                            onTap: () => Navigator.of(context).maybePop(),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Text(
+                                '退出',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
                           ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            '退出',
+                          const Spacer(),
+                          const Text(
+                            '编辑主界面',
                             style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
                               color: Colors.white,
                             ),
                           ),
-                        ),
-                      ),
-                      const Spacer(),
-                      const Text(
-                        '编辑主界面',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const Spacer(),
-                      PressableScale(
-                        scale: 0.92,
-                        onTap: () {
-                          Navigator.of(context).maybePop();
-                          showRoamToast(
-                            '已应用主界面设置',
-                            duration: const Duration(milliseconds: 1400),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            '应用',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF101010),
+                          const Spacer(),
+                          PressableScale(
+                            scale: 0.92,
+                            onTap: () {
+                              Navigator.of(context).maybePop();
+                              showRoamToast(
+                                '已应用主界面设置',
+                                duration: const Duration(milliseconds: 1400),
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: const Text(
+                                '应用',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF101010),
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 8),
+                    // ---- 中间：主界面预览 ----
+                    Expanded(
+                      child: _PreviewFrame(controller: widget.controller),
+                    ),
+                    const SizedBox(height: 12),
+                    // ---- 底部工具栏 ----
+                    _BottomToolbar(controller: widget.controller),
+                    SizedBox(height: MediaQuery.paddingOf(context).bottom + 6),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                // ---- 中间：主界面预览 ----
-                Expanded(child: _PreviewFrame(controller: widget.controller)),
-                const SizedBox(height: 12),
-                // ---- 底部工具栏 ----
-                _BottomToolbar(controller: widget.controller),
-                SizedBox(height: MediaQuery.paddingOf(context).bottom + 6),
-              ],
+              ),
             ),
           ),
         );
@@ -422,9 +443,7 @@ class _BottomToolbar extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w500,
-                        color: item.active
-                            ? RoamColors.aurora
-                            : Colors.white70,
+                        color: item.active ? RoamColors.aurora : Colors.white70,
                       ),
                     ),
                   ],
@@ -496,120 +515,107 @@ class _DimSheet extends StatelessWidget {
               bottom: MediaQuery.paddingOf(context).bottom + 20,
             ),
             child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const RoamSheetHandle(),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Text(
-                    '壁纸压暗',
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const RoamSheetHandle(),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Text(
+                      '壁纸压暗',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${(value * 100).round()}%',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: RoamColors.aurora,
+                    const Spacer(),
+                    Text(
+                      '${(value * 100).round()}%',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: RoamColors.aurora,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                '有壁纸时整屏会压暗一层，壁纸越亮、文字越需要压暗。',
-                style: TextStyle(fontSize: 12, color: Colors.white54),
-              ),
-              const SizedBox(height: 8),
-              SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 4,
-                  activeTrackColor: RoamColors.aurora,
-                  inactiveTrackColor: Colors.white24,
-                  thumbColor: Colors.white,
-                  overlayColor: const Color(0x33FF9500),
-                  thumbShape: const RoundSliderThumbShape(
-                    enabledThumbRadius: 9,
-                  ),
-                  overlayShape: const RoundSliderOverlayShape(
-                    overlayRadius: 18,
-                  ),
+                  ],
                 ),
-                child: Slider(
+                const SizedBox(height: 6),
+                const Text(
+                  '有壁纸时整屏会压暗一层，壁纸越亮、文字越需要压暗。',
+                  style: TextStyle(fontSize: 12, color: Colors.white54),
+                ),
+                const SizedBox(height: 8),
+                // 拖动条用 miuix 的 Slider：这一层抽屉强制深色，所以颜色取深色那套。
+                MiuixSlider(
                   value: value,
                   min: 0,
                   max: 0.8,
-                  divisions: 16,
-                  onChanged: hasWallpaper
+                  steps: 16,
+                  enabled: hasWallpaper,
+                  onValueChanged: hasWallpaper
                       ? (v) => controller.updateSettings(
                           settings.copyWith(wallpaperDim: v),
                         )
                       : null,
                 ),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  for (final preset in const [
-                    ('无', 0.0),
-                    ('轻', 0.2),
-                    ('标准', 0.38),
-                    ('深', 0.6),
-                  ])
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: PressableScale(
-                          scale: 0.94,
-                          onTap: hasWallpaper
-                              ? () => controller.updateSettings(
-                                  settings.copyWith(wallpaperDim: preset.$2),
-                                )
-                              : null,
-                          child: Container(
-                            height: 38,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: (value - preset.$2).abs() < 0.01
-                                  ? const Color(0x33FF9500)
-                                  : Colors.white.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    for (final preset in const [
+                      ('无', 0.0),
+                      ('轻', 0.2),
+                      ('标准', 0.38),
+                      ('深', 0.6),
+                    ])
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: PressableScale(
+                            scale: 0.94,
+                            onTap: hasWallpaper
+                                ? () => controller.updateSettings(
+                                    settings.copyWith(wallpaperDim: preset.$2),
+                                  )
+                                : null,
+                            child: Container(
+                              height: 38,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
                                 color: (value - preset.$2).abs() < 0.01
-                                    ? RoamColors.aurora
-                                    : Colors.transparent,
+                                    ? const Color(0x33FF9500)
+                                    : Colors.white.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: (value - preset.$2).abs() < 0.01
+                                      ? RoamColors.aurora
+                                      : Colors.transparent,
+                                ),
                               ),
-                            ),
-                            child: Text(
-                              preset.$1,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: (value - preset.$2).abs() < 0.01
-                                    ? RoamColors.aurora
-                                    : Colors.white70,
+                              child: Text(
+                                preset.$1,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: (value - preset.$2).abs() < 0.01
+                                      ? RoamColors.aurora
+                                      : Colors.white70,
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-              if (!hasWallpaper) ...[
-                const SizedBox(height: 12),
-                const Text(
-                  '当前没有壁纸，压暗不会生效。先在「背景设置」里选一张。',
-                  style: TextStyle(fontSize: 12, color: Colors.white38),
+                  ],
                 ),
-              ],
+                if (!hasWallpaper) ...[
+                  const SizedBox(height: 12),
+                  const Text(
+                    '当前没有壁纸，压暗不会生效。先在「背景设置」里选一张。',
+                    style: TextStyle(fontSize: 12, color: Colors.white38),
+                  ),
+                ],
               ],
             ),
           ),
@@ -658,161 +664,164 @@ class _BackgroundSheet extends StatelessWidget {
           bottom: MediaQuery.paddingOf(context).bottom + 20,
         ),
         child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 拖动条（miuix 尺寸：45×4，24dp 触区）
-          const RoamSheetHandle(),
-          const SizedBox(height: 4),
-          const Text(
-            '背景设置',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 16),
-          // 预设壁纸
-          const Text(
-            '预设壁纸',
-            style: TextStyle(fontSize: 13, color: Colors.white54),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 100,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (final wp in [
-                  'none',
-                  'wanmu',
-                  'luoyang',
-                  'muguang',
-                  'kongjing',
-                ])
-                  GestureDetector(
-                    onTap: () {
-                      controller.updateSettings(
-                        settings.copyWith(
-                          wallpaper: wp,
-                          customWallpaperPath: '',
-                        ),
-                      );
-                    },
-                    child: Container(
-                      width: 55,
-                      margin: const EdgeInsets.only(right: 10),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color:
-                              current == wp &&
-                                  settings.customWallpaperPath.isEmpty
-                              ? RoamColors.aurora
-                              : Colors.white24,
-                          width: 2,
-                        ),
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: wp == 'none'
-                          ? const ColoredBox(
-                              color: Color(0xFF2C2C2E),
-                              child: Center(
-                                child: Icon(
-                                  Icons.block,
-                                  color: Colors.white38,
-                                  size: 20,
-                                ),
-                              ),
-                            )
-                          : Image.asset(
-                              'assets/wallpapers/$wp.jpg',
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
-                                  const ColoredBox(color: Color(0xFF2C2C2E)),
-                            ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          // 从相册选择
-          PressableScale(
-            scale: 0.96,
-            onTap: () async {
-              final path = await _pickImageFromGallery();
-              if (path == null) return;
-              final previous = settings.customWallpaperPath;
-              // 新路径是唯一的（原生侧带时间戳），旧图从解码缓存里清掉，
-              // 避免同一张图被二次选择时命中旧缓存。
-              if (previous.isNotEmpty) {
-                await FileImage(File(previous)).evict();
-              }
-              await FileImage(File(path)).evict();
-              if (!context.mounted) return;
-              controller.updateSettings(
-                settings.copyWith(
-                  customWallpaperPath: path,
-                  wallpaper: 'custom',
-                ),
-              );
-              Navigator.of(context).maybePop();
-            },
-            child: Container(
-              height: 50,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white24),
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 拖动条（miuix 尺寸：45×4，24dp 触区）
+            const RoamSheetHandle(),
+            const SizedBox(height: 4),
+            const Text(
+              '背景设置',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
               ),
-              child: const Row(
+            ),
+            const SizedBox(height: 16),
+            // 预设壁纸
+            const Text(
+              '预设壁纸',
+              style: TextStyle(fontSize: 13, color: Colors.white54),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 100,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
                 children: [
-                  SizedBox(width: 16),
-                  Icon(Icons.photo_library, color: Colors.white70, size: 22),
-                  SizedBox(width: 12),
-                  Text(
-                    '从相册选择自定义背景',
-                    style: TextStyle(fontSize: 15, color: Colors.white),
-                  ),
-                  Spacer(),
-                  Icon(Icons.chevron_right, color: Colors.white38),
-                  SizedBox(width: 12),
+                  for (final wp in [
+                    'none',
+                    'wanmu',
+                    'luoyang',
+                    'muguang',
+                    'kongjing',
+                  ])
+                    GestureDetector(
+                      onTap: () {
+                        controller.updateSettings(
+                          settings.copyWith(
+                            wallpaper: wp,
+                            customWallpaperPath: '',
+                          ),
+                        );
+                      },
+                      child: Container(
+                        width: 55,
+                        margin: const EdgeInsets.only(right: 10),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color:
+                                current == wp &&
+                                    settings.customWallpaperPath.isEmpty
+                                ? RoamColors.aurora
+                                : Colors.white24,
+                            width: 2,
+                          ),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: wp == 'none'
+                            ? const ColoredBox(
+                                color: Color(0xFF2C2C2E),
+                                child: Center(
+                                  child: Icon(
+                                    Icons.block,
+                                    color: Colors.white38,
+                                    size: 20,
+                                  ),
+                                ),
+                              )
+                            : Image.asset(
+                                'assets/wallpapers/$wp.jpg',
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) =>
+                                    const ColoredBox(color: Color(0xFF2C2C2E)),
+                              ),
+                      ),
+                    ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(height: 10),
-          // 清除自定义
-          if (settings.customWallpaperPath.isNotEmpty)
+            const SizedBox(height: 20),
+            // 从相册选择
             PressableScale(
               scale: 0.96,
-              onTap: () {
+              onTap: () async {
+                final path = await _pickImageFromGallery();
+                if (path == null) return;
+                final previous = settings.customWallpaperPath;
+                // 新路径是唯一的（原生侧带时间戳），旧图从解码缓存里清掉，
+                // 避免同一张图被二次选择时命中旧缓存。
+                if (previous.isNotEmpty) {
+                  await FileImage(File(previous)).evict();
+                }
+                await FileImage(File(path)).evict();
+                if (!context.mounted) return;
                 controller.updateSettings(
-                  settings.copyWith(customWallpaperPath: '', wallpaper: 'none'),
+                  settings.copyWith(
+                    customWallpaperPath: path,
+                    wallpaper: 'custom',
+                  ),
                 );
                 Navigator.of(context).maybePop();
               },
               child: Container(
                 height: 50,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
+                  color: Colors.white.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white24),
                 ),
                 child: const Row(
                   children: [
                     SizedBox(width: 16),
-                    Icon(Icons.delete_outline, color: Colors.red, size: 22),
+                    Icon(Icons.photo_library, color: Colors.white70, size: 22),
                     SizedBox(width: 12),
                     Text(
-                      '清除自定义背景',
-                      style: TextStyle(fontSize: 15, color: Colors.red),
+                      '从相册选择自定义背景',
+                      style: TextStyle(fontSize: 15, color: Colors.white),
                     ),
+                    Spacer(),
+                    Icon(Icons.chevron_right, color: Colors.white38),
+                    SizedBox(width: 12),
                   ],
                 ),
               ),
             ),
+            const SizedBox(height: 10),
+            // 清除自定义
+            if (settings.customWallpaperPath.isNotEmpty)
+              PressableScale(
+                scale: 0.96,
+                onTap: () {
+                  controller.updateSettings(
+                    settings.copyWith(
+                      customWallpaperPath: '',
+                      wallpaper: 'none',
+                    ),
+                  );
+                  Navigator.of(context).maybePop();
+                },
+                child: Container(
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Row(
+                    children: [
+                      SizedBox(width: 16),
+                      Icon(Icons.delete_outline, color: Colors.red, size: 22),
+                      SizedBox(width: 12),
+                      Text(
+                        '清除自定义背景',
+                        style: TextStyle(fontSize: 15, color: Colors.red),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
