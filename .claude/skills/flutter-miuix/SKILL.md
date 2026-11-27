@@ -129,8 +129,40 @@ OS4 参数与完整接线示例见 [中文](references/110_os4.zh.md) / [English
   背景尚未就绪或无 backdrop 时为实色回退。普通 `blurred: true` 顶栏无需这套捕获。
 - **状态**：控制器/锚点在 State 中持有并释放；滚动监听器参数是 `behavior:`，顶栏是 `scrollBehavior:`。
   `MiuixExitUntilCollapsedScrollBehavior` 自身没有 `dispose()`，释放自己持有的 `behavior.state`。
-- **边界**：OS4 搜索层仅为示例，不存在公开的 `MiuixGlassSearchBar`；没有 `MiuixGlassBottomSheet`。
-  不要从 Kotlin 命名猜不存在的 Flutter 类。
+- **边界**：OS4 搜索层仅为示例，不存在公开的 `MiuixGlassSearchBar`。`MiuixGlassBottomSheet`
+  自 **1.4.0** 起才有（同时新增 `miuixGlassBottomSheetSurface`）；1.2–1.3 没有。不要从 Kotlin
+  命名猜不存在的 Flutter 类。
+- **模糊只能走库**：玻璃的模糊层是「采样快照 → 低分辨率高斯 → 混色 → 折射」，实现载体是
+  `MiuixGlassPanel(backdrop: ...)`。不要自己套 `BackdropFilter`（尤其在 `ShaderMask` 里），
+  那样读不到下层内容：测试引擎整片空白，真机表现为「毛玻璃/渐隐彻底消失」。
+
+### 玻璃接线的四条硬规则
+
+1. **`MiuixLayerBackdropCapture` 只包背景，玻璃放捕获树外。** 包住采样同一 backdrop 的
+   `MiuixGlassPanel` 会形成自采样（画面拖影）。
+2. **`fill` 只在没有快照时绘制**（`backdrop == null || !hasContent`）。有快照时它不参与合成，
+   所以「把 fill 调亮/调暗」改变不了玻璃通透度；要改观感只能改 `material`。
+3. **要「只糊不压暗」就换零色调材质**，而不是调 fill：
+   ```dart
+   MiuixGlassMaterial(
+     blurRadius: 32,
+     first: const MiuixGlassColorLayer(
+       Color(0x00000000), MiuixGlassColorBlendMode.srcOver,
+     ),
+   )
+   ```
+   `puredThinGlass` / `actionBarMask` 自带的深色层是 `#565656`(luminosity) + `#3F3F3F`(overlay)，
+   那就是「边缘渐隐上盖了一层灰」的真正来源。
+4. **弹层用官方表面函数**，不要自己拼圆角 + 描边 + `BackdropFilter`：
+   ```dart
+   miuixGlassBottomSheetSurface(backdrop: pageBackdrop)(
+     context, MiuixBottomSheetDefaults.cornerRadius,
+     MiuixGlassDialogDefaults.scrimColor, /*isOverscroll*/ false, child,
+   )
+   miuixGlassDialogSurface(backdrop: pageBackdrop)(context, 28, scrim, 1, child)
+   ```
+   它们内含「遮罩压暗 → 模糊 → dialogGlass → forTheme 描边」。压栈路由里的弹层读不到页面
+   backdrop，必须在**打开之前**在页面 context 里取一次再传进去。
 
 ## 组件目录索引
 

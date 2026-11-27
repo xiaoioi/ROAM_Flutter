@@ -141,7 +141,10 @@ class _RoamGlassSearchOverlayState extends State<RoamGlassSearchOverlay>
               child: IgnorePointer(
                 child: Opacity(
                   opacity: t,
-                  child: _ProgressiveBlurBand(isDark: isDark),
+                  child: _ProgressiveBlurBand(
+                    backdrop: widget.backdrop,
+                    isDark: isDark,
+                  ),
                 ),
               ),
             ),
@@ -379,8 +382,9 @@ class _RoamGlassSearchOverlayState extends State<RoamGlassSearchOverlay>
 
 /// 顶部渐进模糊带：纯模糊 + `bandBlurMask` 消融，不叠任何色调。
 class _ProgressiveBlurBand extends StatelessWidget {
-  const _ProgressiveBlurBand({required this.isDark});
+  const _ProgressiveBlurBand({required this.backdrop, required this.isDark});
 
+  final MiuixBackdrop backdrop;
   final bool isDark;
 
   @override
@@ -391,6 +395,6 @@ class _ProgressiveBlurBand extends StatelessWidget {
         GlassRuntime.performance.value) {
       return const SizedBox.shrink();
     }
-    return const RoamProgressiveBlur(sigma: 32);
+    return RoamProgressiveBlur(backdrop: backdrop, sigma: 32);
   }
 }

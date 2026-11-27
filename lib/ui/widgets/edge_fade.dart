@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import 'glass_controls.dart';
 
@@ -20,8 +21,8 @@ class RoamEdgeFade extends StatelessWidget {
     this.strength = 1,
   });
 
-  /// 保留字段以兼容旧调用点；纯模糊不需要采样快照。
-  final Object? backdrop;
+  /// 页面级背景采样源：库的玻璃必须从快照取样，不能用裸 BackdropFilter。
+  final MiuixBackdrop? backdrop;
 
   /// true：顶边（上糊下清）；false：底边（下糊上清）。
   final bool fromTop;
@@ -38,6 +39,7 @@ class RoamEdgeFade extends StatelessWidget {
       return const SizedBox.shrink();
     }
     return RoamProgressiveBlur(
+      backdrop: backdrop,
       sigma: blurRadius,
       fromTop: fromTop,
       strength: strength,

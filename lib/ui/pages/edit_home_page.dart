@@ -4,12 +4,14 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../../models/browser_models.dart';
 import '../../state/browser_controller.dart';
 import '../../theme/roam_theme.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/predictive_back.dart';
+import '../widgets/roam_backdrop_scope.dart';
 import '../widgets/roam_sheet.dart';
 import 'material_effects_page.dart';
 import '../app_messenger.dart';
@@ -435,6 +437,7 @@ class _BottomToolbar extends StatelessWidget {
   }
 
   void _showBackgroundSheet(BuildContext context) {
+    final backdrop = RoamBackdropScope.samplingOf(context);
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -442,7 +445,7 @@ class _BottomToolbar extends StatelessWidget {
       builder: (sheetContext) => PredictiveBackScope(
         style: PredictiveBackStyle.sheet,
         onCommit: () => Navigator.of(sheetContext).maybePop(),
-        child: _BackgroundSheet(controller: controller),
+        child: _BackgroundSheet(controller: controller, backdrop: backdrop),
       ),
     );
   }
@@ -450,6 +453,7 @@ class _BottomToolbar extends StatelessWidget {
   /// 壁纸压暗：壁纸铺上后整屏会自动压暗一层，白字与玻璃才站得住。
   /// 原来这里是「浅色模式」开关，主题切换已在「外观」里，位置让给压暗强度。
   void _showDimSheet(BuildContext context) {
+    final backdrop = RoamBackdropScope.samplingOf(context);
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -457,7 +461,7 @@ class _BottomToolbar extends StatelessWidget {
       builder: (sheetContext) => PredictiveBackScope(
         style: PredictiveBackStyle.sheet,
         onCommit: () => Navigator.of(sheetContext).maybePop(),
-        child: _DimSheet(controller: controller),
+        child: _DimSheet(controller: controller, backdrop: backdrop),
       ),
     );
   }
@@ -465,9 +469,10 @@ class _BottomToolbar extends StatelessWidget {
 
 /// 壁纸压暗调节面板：0~80%，默认 38%。
 class _DimSheet extends StatelessWidget {
-  const _DimSheet({required this.controller});
+  const _DimSheet({required this.controller, this.backdrop});
 
   final BrowserController controller;
+  final MiuixBackdrop? backdrop;
 
   @override
   Widget build(BuildContext context) {
@@ -481,6 +486,7 @@ class _DimSheet extends StatelessWidget {
             settings.customWallpaperPath.isNotEmpty;
         // 底部弹出框统一走 miuix GlassBottomSheet 表面；壁纸上固定深色。
         return RoamGlassSheetSurface(
+          backdrop: backdrop,
           forceDark: true,
           child: Padding(
             padding: EdgeInsets.only(
@@ -631,9 +637,10 @@ class _ToolItem {
 
 /// 背景设置弹出面板：预设壁纸 / 从相册选择 / 纯色。
 class _BackgroundSheet extends StatelessWidget {
-  const _BackgroundSheet({required this.controller});
+  const _BackgroundSheet({required this.controller, this.backdrop});
 
   final BrowserController controller;
+  final MiuixBackdrop? backdrop;
 
   @override
   Widget build(BuildContext context) {
@@ -641,6 +648,7 @@ class _BackgroundSheet extends StatelessWidget {
     final current = settings.wallpaper;
 
     return RoamGlassSheetSurface(
+      backdrop: backdrop,
       forceDark: true,
       child: Padding(
         padding: EdgeInsets.only(

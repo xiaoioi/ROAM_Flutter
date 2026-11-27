@@ -151,7 +151,10 @@ class HyperosTopBar extends StatelessWidget {
                       // 只糊不改色：miuix 的 bandMaterial 自带三层灰调
                       // （深色 #565656 + #3F3F3F），在深色页面上就是一条
                       // 灰遮罩；渐隐本来就只该让内容糊掉，不能顺带压暗。
-                      child: const RoamProgressiveBlur(sigma: 32),
+                      child: RoamProgressiveBlur(
+                        backdrop: miuixLayer,
+                        sigma: 32,
+                      ),
                     ),
                   ),
                 ),

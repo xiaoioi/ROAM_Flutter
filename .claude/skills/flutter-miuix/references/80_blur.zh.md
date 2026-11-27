@@ -7,6 +7,10 @@
 [MiuixTextureBlur] 的高斯模糊交给 Skia/Impeller 的 `ui.ImageFilter.blur`（内部为可分离两趟 + 逐级降采样，无颗粒），sigma 取原版 `BLUR_RADIUS_TO_SIGMA=0.45`；颜色控制（亮度/对比度/饱和度）用等价的 `ColorFilter.matrix`。[MiuixHighlight] 的 bloom 边框仍基于预编译着色器 `shaders/miuix_bloom_stroke.frag`。
 
 > 顶栏毛玻璃另有更简的做法：`MiuixTopAppBar(blurred: true)` 直接用 `BackdropFilter` 模糊身后内容，无需 backdrop 捕获（见「导航与脚手架」章）。
+>
+> 这只适用于**旧组件的 `blurred` 开关**。OS4 玻璃（`MiuixGlassPanel` / 栏遮罩 / 边缘渐隐）
+> 不要自己套 `BackdropFilter`：它在 `ShaderMask` 的 saveLayer 内读不到下层内容，真机上会
+> 表现为模糊彻底消失。OS4 的模糊一律走 `MiuixGlassPanel(backdrop: ...)` + `material`。
 
 ### 背景捕获
 

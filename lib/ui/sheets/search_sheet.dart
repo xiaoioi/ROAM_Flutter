@@ -7,6 +7,7 @@ import 'package:flutter_miuix/miuix.dart';
 import '../../models/browser_models.dart';
 import '../../state/browser_controller.dart';
 import '../widgets/predictive_back.dart';
+import '../widgets/roam_backdrop_scope.dart';
 import '../widgets/roam_sheet.dart';
 
 /// 首页顶栏空白处 / 网页标题处点击后弹出的「第二界面」。
@@ -28,6 +29,8 @@ Future<void> showSearchSheet({
   required BuildContext context,
   required BrowserController controller,
 }) {
+  // 官方玻璃表面要页面快照；弹层压在新路由，打开前先取。
+  final backdrop = RoamBackdropScope.samplingOf(context);
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
@@ -40,15 +43,16 @@ Future<void> showSearchSheet({
         FocusScope.of(sheetContext).unfocus();
         Navigator.of(sheetContext).maybePop();
       },
-      child: _SearchSheet(controller: controller),
+      child: _SearchSheet(controller: controller, backdrop: backdrop),
     ),
   );
 }
 
 class _SearchSheet extends StatefulWidget {
-  const _SearchSheet({required this.controller});
+  const _SearchSheet({required this.controller, this.backdrop});
 
   final BrowserController controller;
+  final MiuixBackdrop? backdrop;
 
   @override
   State<_SearchSheet> createState() => _SearchSheetState();
@@ -308,7 +312,7 @@ class _SearchSheetState extends State<_SearchSheet> {
     return Padding(
       // 键盘弹起时整块面板上移，输入框不会被 IME 盖住。
       padding: EdgeInsets.only(bottom: keyboard),
-      child: RoamGlassSheetSurface(child: content),
+      child: RoamGlassSheetSurface(backdrop: widget.backdrop, child: content),
     );
   }
 }

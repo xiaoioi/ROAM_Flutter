@@ -28,7 +28,7 @@ void main() {
             width: 300,
             height: 200,
             child: RoamPopupGlass(
-              borderRadius: BorderRadius.all(Radius.circular(28)),
+              isDialog: true,
               child: SizedBox.expand(),
             ),
           ),
@@ -51,7 +51,7 @@ void main() {
             width: 300,
             height: 200,
             child: RoamPopupGlass(
-              borderRadius: BorderRadius.all(Radius.circular(28)),
+              isDialog: true,
               child: SizedBox.expand(),
             ),
           ),
@@ -73,7 +73,7 @@ void main() {
     expect(decoration.border, isNotNull);
   });
 
-  testWidgets('标准：整块 BackdropFilter + miuix 描边', (tester) async {
+  testWidgets('标准：官方玻璃表面 + miuix 描边', (tester) async {
     await tester.pumpWidget(
       _host(
         const Center(
@@ -81,7 +81,7 @@ void main() {
             width: 300,
             height: 200,
             child: RoamPopupGlass(
-              borderRadius: BorderRadius.all(Radius.circular(28)),
+              isDialog: true,
               child: SizedBox.expand(),
             ),
           ),
@@ -91,11 +91,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(GlassRuntime.mode, RoamGlassMode.standard);
-    expect(find.byType(BackdropFilter), findsOneWidget);
+    // 标准态走 miuix 的官方表面函数（dialogGlass 材质 + forTheme 描边），
+    // 不再自己套 BackdropFilter。
     expect(find.byType(MiuixGlassPanel), findsOneWidget);
-    // 模糊范围 = 面板范围（不是只糊一块）
-    final blur = tester.widget<BackdropFilter>(find.byType(BackdropFilter));
-    expect(blur.filter, isNotNull);
+    expect(find.byType(BackdropFilter), findsNothing);
   });
 
   testWidgets('轮廓光可单独关闭', (tester) async {
@@ -108,7 +107,7 @@ void main() {
             width: 300,
             height: 200,
             child: RoamPopupGlass(
-              borderRadius: BorderRadius.all(Radius.circular(28)),
+              isDialog: true,
               child: SizedBox.expand(),
             ),
           ),

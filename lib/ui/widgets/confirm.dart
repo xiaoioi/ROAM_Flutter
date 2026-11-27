@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_miuix/miuix.dart';
 
 import 'predictive_back.dart';
+import 'roam_backdrop_scope.dart';
 import 'roam_popup_glass.dart';
 
 /// 对话框底部按钮：点按后以 [value] 关闭对话框。
@@ -32,6 +33,8 @@ Future<T?> showRoamDialog<T>({
   String? message,
   Widget? body,
 }) {
+  // 对话框同样压的是新路由，页面捕获器要在这里先取。
+  final backdrop = RoamBackdropScope.samplingOf(context);
   return showDialog<T>(
     context: context,
     barrierColor: MiuixGlassDialogDefaults.scrimColor,
@@ -42,6 +45,7 @@ Future<T?> showRoamDialog<T>({
         title: title,
         message: message,
         body: body,
+        backdrop: backdrop,
         actions: [
           for (final action in actions)
             _DialogAction(
@@ -96,6 +100,7 @@ Future<String?> showRoamInput({
   String confirmLabel = '保存',
 }) {
   final controller = TextEditingController(text: initialValue);
+  final backdrop = RoamBackdropScope.samplingOf(context);
   return showDialog<String>(
     context: context,
     barrierColor: MiuixGlassDialogDefaults.scrimColor,
@@ -105,6 +110,7 @@ Future<String?> showRoamInput({
       child: _RoamDialog(
         title: title,
         message: message,
+        backdrop: backdrop,
         body: Padding(
           padding: const EdgeInsets.only(top: 16),
           child: MiuixTextField(
@@ -159,11 +165,13 @@ class _RoamDialog extends StatelessWidget {
     required this.actions,
     this.message,
     this.body,
+    this.backdrop,
   });
 
   final String title;
   final String? message;
   final Widget? body;
+  final MiuixBackdrop? backdrop;
   final List<_DialogAction> actions;
 
   @override
@@ -172,7 +180,8 @@ class _RoamDialog extends StatelessWidget {
     final fg = miuix.colors.onSurface;
     final sub = miuix.colors.onSurfaceVariantSummary;
     final surface = RoamPopupGlass(
-      borderRadius: BorderRadius.circular(28),
+      backdrop: backdrop,
+      isDialog: true,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 22, 24, 16),
         child: Column(

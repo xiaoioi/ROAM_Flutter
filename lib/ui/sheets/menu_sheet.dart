@@ -2,10 +2,12 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_miuix/miuix.dart';
 
 import '../../state/browser_controller.dart';
 import '../widgets/glass_controls.dart';
 import '../widgets/predictive_back.dart';
+import '../widgets/roam_backdrop_scope.dart';
 import '../widgets/roam_sheet.dart';
 import '../pages/history_page.dart';
 import '../pages/settings_page.dart';
@@ -20,6 +22,8 @@ Future<void> showMenuSheet({
   bool? isDark,
 }) {
   final dark = isDark ?? Theme.of(context).brightness == Brightness.dark;
+  // 官方玻璃表面要页面快照；弹层压在新路由，打开前先取。
+  final backdrop = RoamBackdropScope.samplingOf(context);
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
@@ -28,16 +32,25 @@ Future<void> showMenuSheet({
     builder: (sheetContext) => PredictiveBackScope(
       style: PredictiveBackStyle.sheet,
       onCommit: () => Navigator.of(sheetContext).maybePop(),
-      child: _MenuPanel(controller: controller, isDark: dark),
+      child: _MenuPanel(
+        controller: controller,
+        isDark: dark,
+        backdrop: backdrop,
+      ),
     ),
   );
 }
 
 class _MenuPanel extends StatefulWidget {
-  const _MenuPanel({required this.controller, required this.isDark});
+  const _MenuPanel({
+    required this.controller,
+    required this.isDark,
+    this.backdrop,
+  });
 
   final BrowserController controller;
   final bool isDark;
+  final MiuixBackdrop? backdrop;
 
   @override
   State<_MenuPanel> createState() => _MenuPanelState();
@@ -184,7 +197,7 @@ class _MenuPanelState extends State<_MenuPanel> {
       ),
     );
 
-    return RoamGlassSheetSurface(child: content);
+    return RoamGlassSheetSurface(backdrop: widget.backdrop, child: content);
   }
 
   /// 功能目录：id → 条目。工具栏自定义页与这里共用 id。

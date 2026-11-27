@@ -1,7 +1,5 @@
 // ignore_for_file: deprecated_member_use
 
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_miuix/miuix.dart';
 
@@ -10,42 +8,41 @@ import 'glass_controls.dart';
 
 /// 弹层（底部抽屉 / 对话框）统一使用的玻璃表面。
 ///
-/// 关键点：**整块面板一起模糊**。之前用的是 miuix 的折射采样路径——
-/// 它按快照局部取纹理再走 shader，在「压栈路由 + platform view」的组合下
-/// 采样区域和面板对不上，表现就是面板里只有一块是糊的、其余是渐变实色。
-/// 现在改成最直接的一层：面板自身开一个 [BackdropFilter]，把**整个矩形**
-/// 高斯模糊，然后在上面叠 miuix 的材质色与高光描边。这样：
+/// 标准态**直接用 miuix 的官方表面函数**：
+///  - 底部抽屉 → `miuixGlassBottomSheetSurface`
+///  - 对话框 → `miuixGlassDialogSurface`
 ///
-///  - 背后是什么（Flutter 页面或 WebView）都能糊；
-///  - 模糊范围 = 面板范围，不会出现「糊一半」的接缝；
-///  - 材质、描边仍取 [MiuixGlassMaterials.dialogGlass] /
-///    [MiuixGlassStrokes.forTheme]，和 miuix 自己的弹层一致。
+/// 它们就是 `MiuixGlassBottomSheet` / `MiuixGlassDialog` 内部用的那一份：
+/// 先按遮罩色把采样到的背景压暗，再走 dialogGlass 三层材质 + forTheme 高光描边，
+/// 顶部圆角、过拖延展去描边这些细节都在里面，不需要外面再拼一遍。
 ///
-/// 三态：
+/// [backdrop] 由页面外壳通过 [RoamBackdropScope] 交出。压栈路由里的弹层自己
+/// 读不到页面捕获器，所以必须在打开之前取一次；拿不到时传 null，官方表面会
+/// 用 `containerColor` 兜底（这里给半透明，至少还是磨砂而不是实色块）。
+///
+/// 三态（跟随「材质显示效果」/「高斯模糊效果」）：
 ///  - 材质关闭 → 纯色，不模糊；
 ///  - 性能优先 → 半透明磨砂 + 轮廓光（白边/浅黑边按明暗取）；
-///  - 标准 → 实时高斯 + 高光描边。
+///  - 标准 → 官方玻璃表面。
 class RoamPopupGlass extends StatelessWidget {
   const RoamPopupGlass({
     super.key,
     required this.child,
-    this.borderRadius = const BorderRadius.vertical(
-      top: Radius.circular(MiuixBottomSheetDefaults.cornerRadius),
-    ),
+    this.backdrop,
+    this.isDialog = false,
     this.forceDark,
-    this.sigma = 28,
   });
 
   final Widget child;
 
-  /// 面板圆角（底部抽屉只有上方两角，对话框四角一致）。
-  final BorderRadius borderRadius;
+  /// 页面级背景采样源；为空时官方表面用半透明兜底色。
+  final MiuixBackdrop? backdrop;
 
-  /// 强制按深色渲染（壁纸上的抽屉：深底白字）。
+  /// true：对话框（四角 28）；false：底部抽屉（只有上方两角）。
+  final bool isDialog;
+
+  /// 强制深色（首页壁纸上的抽屉）。只影响兜底底色，标准态仍跟随主题。
   final bool? forceDark;
-
-  /// 实时高斯半径。
-  final double sigma;
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +61,7 @@ class RoamPopupGlass extends StatelessWidget {
     // 材质关闭：纯色背景，任何模糊都不跑。
     if (mode == RoamGlassMode.off) {
       return ClipRRect(
-        borderRadius: borderRadius,
+        borderRadius: _shapeRadius,
         child: ColoredBox(
           color: dark ? RoamColors.cardDark : RoamColors.cardLight,
           child: child,
@@ -76,7 +73,7 @@ class RoamPopupGlass extends StatelessWidget {
     if (mode == RoamGlassMode.performance) {
       return Container(
         decoration: BoxDecoration(
-          borderRadius: borderRadius,
+          borderRadius: _shapeRadius,
           color: roamFrostedFill(dark),
           border: GlassRuntime.rimLight.value
               ? Border.all(color: roamRimColor(dark), width: 1)
@@ -87,25 +84,27 @@ class RoamPopupGlass extends StatelessWidget {
       );
     }
 
-    // 标准：整块实时高斯 + miuix 的弹层材质色与高光描边。
-    final tint = dark
-        ? const Color(0xFF17171B).withValues(alpha: 0.62)
-        : Colors.white.withValues(alpha: 0.66);
-
-    return ClipRRect(
-      borderRadius: borderRadius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        child: MiuixGlassPanel(
-          shape: MiuixGlassShape(borderRadius: borderRadius),
-          material: MiuixGlassMaterials.dialogGlass(dark),
-          stroke: MiuixGlassStrokes.forTheme(dark),
-          fill: tint,
-          shadow: null,
-          shading: false,
-          child: child,
-        ),
-      ),
+    // 标准：官方表面（遮罩压暗 → dialogGlass 材质 → 描边）。
+    // 没有快照时用半透明兜底色，而不是主题 background（那是一块实色）。
+    final fallback = (dark ? RoamColors.cardDark : Colors.white).withValues(
+      alpha: 0.72,
     );
+    final scrim = MiuixGlassDialogDefaults.scrimColor;
+    if (isDialog) {
+      return miuixGlassDialogSurface(
+        backdrop: backdrop,
+        containerColor: fallback,
+      )(context, 28, scrim, 1, child);
+    }
+    return miuixGlassBottomSheetSurface(
+      backdrop: backdrop,
+      containerColor: fallback,
+    )(context, MiuixBottomSheetDefaults.cornerRadius, scrim, false, child);
   }
+
+  BorderRadius get _shapeRadius => isDialog
+      ? BorderRadius.circular(28)
+      : BorderRadius.vertical(
+          top: Radius.circular(MiuixBottomSheetDefaults.cornerRadius),
+        );
 }

@@ -6,6 +6,7 @@ import 'package:flutter_miuix/miuix.dart';
 import '../../theme/roam_theme.dart';
 import 'glass_controls.dart';
 import 'predictive_back.dart';
+import 'roam_backdrop_scope.dart';
 import 'roam_popup_glass.dart';
 
 /// 星环统一的底部玻璃面板：`miuix` 的 GlassBottomSheet 表面 + 顶部圆角。
@@ -22,6 +23,8 @@ Future<T?> showRoamSheet<T>({
   double maxHeightFactor = 0.84,
   bool isDismissible = true,
 }) {
+  // 弹层压的是新路由，读不到页面自己的捕获器，先取一次交给官方表面。
+  final backdrop = RoamBackdropScope.samplingOf(context);
   return showModalBottomSheet<T>(
     context: context,
     useRootNavigator: true,
@@ -41,6 +44,7 @@ Future<T?> showRoamSheet<T>({
         child: ConstrainedBox(
           constraints: BoxConstraints(maxHeight: maxHeight),
           child: RoamGlassSheetSurface(
+            backdrop: backdrop,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -79,12 +83,14 @@ class RoamGlassSheetSurface extends StatelessWidget {
   const RoamGlassSheetSurface({
     super.key,
     required this.child,
-    this.radius = MiuixBottomSheetDefaults.cornerRadius,
+    this.backdrop,
     this.forceDark,
   });
 
   final Widget child;
-  final double radius;
+
+  /// 页面级背景采样源；由 [showRoamSheet] 从 [RoamBackdropScope] 取。
+  final MiuixBackdrop? backdrop;
 
   /// 强制按深色渲染（首页壁纸上的抽屉：壁纸上的玻璃要深底白字）。
   final bool? forceDark;
@@ -92,7 +98,7 @@ class RoamGlassSheetSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RoamPopupGlass(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(radius)),
+      backdrop: backdrop,
       forceDark: forceDark,
       child: child,
     );

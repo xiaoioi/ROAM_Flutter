@@ -86,25 +86,51 @@ Color roamFrostedFill(bool dark) => dark
     ? RoamColors.cardDark.withValues(alpha: 0.86)
     : Colors.white.withValues(alpha: 0.84);
 
-/// 纯渐进模糊带：只糊，不改色。
+/// 只模糊、不叠色的栏材质。
 ///
-/// 之前顶栏/底边用的是 miuix 的 `bandMaterial`，它等于「高斯模糊 + 三层混色」，
-/// 深色那套是 `#565656`(luminosity) + `#3F3F3F`(overlay)、浅色那套是
-/// `#FFFFFF`(softLight) + `#FFFFFF`(hardLight)。这层色调在深色页面上就是一条
-/// 明显发灰的带子——看起来正是「渐隐上盖了一层灰遮罩」。
+/// miuix 的 `puredThinGlass` / `actionBarMask` 都是「模糊 + 三层混色」，深色那套
+/// 是 `#565656`(luminosity) + `#3F3F3F`(overlay)，铺在页面上就是一条灰带。
+/// 边缘渐隐只要「糊」，不要「压暗」，所以这里给零色调材质：三层混色收敛成一层
+/// 全透明 srcOver，`blurRadius` 照常走库的低分辨率高斯管线。
 ///
-/// 边缘渐隐的本意是让内容在边界处糊掉，不该顺带改色，所以这里只保留
-/// 实时高斯本身，淡出仍用官方的 `bandBlurMask()`（上缘实、下缘消融）。
+/// 必须走 [MiuixGlassPanel] 而不是自己套 `BackdropFilter`：库的玻璃是
+/// 「采样快照 → 低分辨率高斯 → 混色 → 折射」，直接 `BackdropFilter` 在
+/// `ShaderMask` 的 saveLayer 里读不到下层内容，真机上会完全看不见（v1.0.34 的坑）。
+MiuixGlassMaterial roamBlurOnlyMaterial(double blurRadius) {
+  final key = blurRadius.toStringAsFixed(2);
+  return _blurOnlyMaterials.putIfAbsent(
+    key,
+    () => MiuixGlassMaterial(
+      blurRadius: blurRadius,
+      first: const MiuixGlassColorLayer(
+        Color(0x00000000),
+        MiuixGlassColorBlendMode.srcOver,
+      ),
+    ),
+  );
+}
+
+final Map<String, MiuixGlassMaterial> _blurOnlyMaterials = {};
+
+/// 纯渐进模糊：只糊，不改色。
+///
+/// 贴边的那一条用 `bandBlurMask()` 让模糊在下缘消融（上缘实、下缘虚），
+/// 中间没有任何色调层——这就是 miuix 的 `glassTopAppBar` band 去掉
+/// `bandBrush` 之后的形状。
 class RoamProgressiveBlur extends StatelessWidget {
   const RoamProgressiveBlur({
     super.key,
+    this.backdrop,
     this.sigma = 32,
     this.fromTop = true,
     this.strength = 1,
   });
 
-  /// 高斯半径（dp）。miuix 的 `progressiveBlurRadius` 是半径不是 sigma，
-  /// 80 半径约等于 sigma 32 的观感，但后者便宜得多。
+  /// 页面级背景采样源（与顶栏玻璃共用同一份快照）。
+  final MiuixBackdrop? backdrop;
+
+  /// 高斯半径（dp）。miuix 的 `progressiveBlurRadius = 80` 是半径不是 sigma，
+  /// 80 半径的观感约等于 32 的 sigma，但后者便宜得多。
   final double sigma;
 
   /// true：上糊下清；false：下糊上清。
@@ -126,16 +152,19 @@ class RoamProgressiveBlur extends StatelessWidget {
           );
     return Opacity(
       opacity: strength.clamp(0.0, 1.0),
-      // 先糊背景，再用渐变把模糊本身擦掉——不叠任何颜色。
       child: ShaderMask(
         blendMode: BlendMode.dstIn,
         shaderCallback: (bounds) => mask.createShader(bounds),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: sigma,
-            sigmaY: sigma,
-            tileMode: TileMode.clamp,
-          ),
+        child: MiuixGlassPanel(
+          backdrop: backdrop,
+          material: roamBlurOnlyMaterial(sigma),
+          shape: const MiuixGlassShape(cornerRadius: 0),
+          stroke: null,
+          shadow: null,
+          shading: false,
+          // 快照未就绪时不要退回 #2C2C2C 的兜底色（那就是「灰」的来源），
+          // 宁可这一帧什么都没有。
+          fill: Colors.transparent,
           child: const SizedBox.expand(),
         ),
       ),

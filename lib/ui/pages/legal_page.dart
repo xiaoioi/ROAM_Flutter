@@ -7,6 +7,7 @@ import '../../state/browser_controller.dart';
 import '../../theme/roam_theme.dart';
 import '../widgets/predictive_back.dart';
 import '../widgets/roam_chrome.dart';
+import '../widgets/roam_backdrop_scope.dart';
 import '../widgets/roam_sheet.dart';
 
 /// 法律协议与政策。
@@ -56,6 +57,7 @@ class LegalPage extends StatelessWidget {
     final fg = (isDark ? RoamColors.textPrimary : RoamColors.dayInk).withValues(
       alpha: 0.72,
     );
+    final backdrop = RoamBackdropScope.samplingOf(context);
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -68,7 +70,7 @@ class LegalPage extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: RoamGlassSheetSurface(
-            radius: 22,
+            backdrop: backdrop,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
               child: Column(
