@@ -70,6 +70,10 @@ class _HomePageState extends State<HomePage> {
         // 否则每帧会把玻璃自身采样进快照，形成「越叠越浓」的反馈。
         MiuixLayerBackdropCapture(
           backdrop: _miuixBg,
+          // 1x 采样：快照只喂给「会再模糊一次」的玻璃/渐隐，3x 屏上每帧
+          // toImage 的数据量从 ~13MB 降到 ~1.4MB（顶栏渐隐是常驻的，
+          // 每帧全屏 3x 出图就是滚动卡顿的主因）。
+          pixelRatio: 1,
           child: Stack(
             fit: StackFit.expand,
             children: [

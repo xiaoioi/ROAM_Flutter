@@ -131,6 +131,7 @@ class _BrowserShellState extends State<BrowserShell> with RouteAware {
               // 不读这两个全局快照，避免玻璃把自己叠进背景（反馈循环）。
               body: MiuixLayerBackdropCapture(
                 backdrop: miuixBackdrop,
+                pixelRatio: 1,
                 child: Column(
                   children: [
                     _RoamTopBar(

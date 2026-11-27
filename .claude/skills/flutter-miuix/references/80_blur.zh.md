@@ -91,7 +91,7 @@ Widget tree = Column(
 - 取样背景快照时向外扩约 3σ margin（配 `TileMode.clamp`），让模糊边缘有真实邻域，避免边缘变暗；但绘制被裁进组件自身边界（`clipRect`），不会溢出（无 shape 时也不溢出）。
 - 首帧快照就绪即出模糊（无异步着色器加载）。
 
-### 边缘渐隐：progressiveTextureBlur（分档 + ImageFilter.blur）
+### 边缘渐隐：progressiveTextureBlur（单张糊图 + 连续 alpha 遮罩）
 
 官方 compose 版在 `miuix-blur` 里：
 
@@ -107,25 +107,36 @@ Modifier.progressiveTextureBlur(backdrop, shape, blurRadius,
 采样点近似二维高斯，半径一大采样就稀，画面会被拆成错位的块（「像碎成好几块
 散开」），而且每帧整条带子跑一遍逐像素循环，延迟也高。
 
+**更不要「按半径分档、每档 blur 一次再叠加」**（v1.0.38~v1.0.40 的弯路）：
+文字是高频高对比内容，两张清晰度不同的图叠在一起就是双重轮廓，档位交接处
+还会浮出台阶，半透明档位合成时 alpha 补不满、下面内容透上来（「越靠边越透明」）。
+7 档 = 7 次 `saveLayer` + 7 次全屏 `ImageFilter.blur`，真机直接卡死。
+
 项目内实现（`lib/ui/widgets/progressive_texture_blur.dart`）：
 
-- 半径分档：`u_i = pow(i/(n-1), 1/curve)`（原版曲线的反解），
-  `sigma_i = radius_i * .55 + .5`。
-- 相邻档用**三角权重**线性插值（Σw ≡ 1），所以是连续的「半糊」过渡。
-- 每档用 `ImageFilter.blur` 画：Impeller/Skia 内部是降采样 + 可分离高斯，
-  GPU 原生，没有块状伪影。清晰端 `sigma≈0.5` 等于原图，接缝不可见。
+- **只画一张图**：按满强度 `sigma = blurRadius * .5 + .5` 模糊一次。
+- 再用一条连续 alpha 遮罩把它擦到 0：`0..startFraction` 恒为 1（完全不透明），
+  `startFraction..endFraction` 按 `pow(1-u, curve)` 淡出，之后 0。
+  只有一份图像 → 没有重影、没有档位断层；顶部 alpha=1 → 看不见后面的内容；
+  过渡段半透明 → 正文透上来，观感是「由清晰逐渐起雾」，连续不断。
 - 遮罩用 `ui.Gradient.linear` **显式像素坐标**：`Alignment` 渐变在非正方形
   区域上把 stops 映射到 `[-.5,.5]`，遮罩会整体错位（表现为「上面反而清晰」）。
-- 档位合成用 `BlendMode.plus`（预乘 alpha 相加）：三角权重和为 1，alpha 正好
-  加回 1（不透明）；用 `srcOver` 会留 `1-Π(1-a)` 的空隙，页面内容透上来，
-  文字又「变清楚」，还会和模糊副本叠成重影。
+- `saveLayer(dst)` 隔离 + `clipRect(带子)`，遮罩用 `dstIn`。全流程 1 次
+  `saveLayer` + 1 次 blur，开销只和带子面积有关。
 
-另一个实测坑：**`canvas.saveLayer(bounds, Paint())` 的 bounds 不能取带子本身**，
-否则那次 `drawImageRect` 的 `imageFilter` 会连同输入一起被裁掉（一点没糊）。
-bounds 要用采样区（含 3σ 外扩的 dst）。
+**顶栏带子的形状**：`startFraction` 要落在栏底下沿之外——顶栏 `Positioned` 的
+`bottom` 给 `-56`（而不是官方的 24 overhang），前 62% 是满强度（盖住状态栏 +
+栏本身），最后 38% 在栏底以下的正文上展开过渡。否则满强度区被压没，栏内会
+透出正文。
 
-**不要**回到「多张不同半径的 `MiuixTextureBlur` 叠加」或「单张糊图 + bandBlurMask
-擦除」，也不要用裸 `BackdropFilter`（`ShaderMask`/`saveLayer` 后读不到下层）。
+两个实测坑：
+- `canvas.saveLayer(bounds, Paint())` 的 bounds 不能取带子本身，否则
+  `drawImageRect` 的 `imageFilter` 会连同输入一起被裁掉（一点没糊）。用采样区（含 2σ 外扩的 dst）。
+- 不要用裸 `BackdropFilter`（`ShaderMask`/`saveLayer` 后读不到下层像素，整条带子透明）。
+
+**性能**：`MiuixLayerBackdropCapture` 是常驻组件，每帧 `toImageSync` 一次快照，
+`pixelRatio` 必须显式给 `1`（3x 屏上每帧数据量 ~13MB → ~1.4MB，这是滚动卡顿
+的主因；玻璃本身有高斯，肉眼分辨不出 1x 与 3x）。
 
 ### Bloom 高光边框### Bloom 高光边框### Bloom 高光边框### Bloom 高光边框### Bloom 高光边框
 

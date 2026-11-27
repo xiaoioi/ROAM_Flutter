@@ -422,7 +422,11 @@ class _AboutTopBar extends StatelessWidget {
                 child: IgnorePointer(
                   child: Opacity(
                     opacity: barAlpha,
-                    child: RoamProgressiveBlur(backdrop: backdrop, blurRadius: 80),
+                    child: RoamProgressiveBlur(
+                      backdrop: backdrop,
+                      blurRadius: 80,
+                      endFraction: 1,
+                    ),
                   ),
                 ),
               ),

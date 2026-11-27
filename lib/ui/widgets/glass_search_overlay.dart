@@ -395,6 +395,6 @@ class _ProgressiveBlurBand extends StatelessWidget {
         GlassRuntime.performance.value) {
       return const SizedBox.shrink();
     }
-    return RoamProgressiveBlur(backdrop: backdrop);
+    return RoamProgressiveBlur(backdrop: backdrop, endFraction: 1);
   }
 }

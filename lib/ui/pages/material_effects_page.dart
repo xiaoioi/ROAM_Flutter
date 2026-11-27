@@ -352,6 +352,7 @@ class _MaterialPreviewState extends State<_MaterialPreview> {
           children: [
             MiuixLayerBackdropCapture(
               backdrop: _miuixBackdrop,
+              pixelRatio: 1,
               child: Image.asset(
                 'assets/wallpapers/wanmu.jpg',
                 fit: BoxFit.cover,

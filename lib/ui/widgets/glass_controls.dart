@@ -91,9 +91,9 @@ Color roamFrostedFill(bool dark) => dark
 /// 边缘渐隐：`Modifier.progressiveTextureBlur` 的语义实现。
 ///
 /// `flutter_miuix` 1.4.0（pub 最新）没有移植这个 Modifier，项目内按官方 API
-/// 补了 [MiuixProgressiveTextureBlur] + [ProgressiveBlur]：把半径线性分成多档，
-/// 每档用**库自己的** [MiuixTextureBlur] 绘制，档间用三角权重交叉淡化。
-/// 越靠边越糊、清晰端是全分辨率原图，过渡连续无台阶。
+/// 补了 [MiuixProgressiveTextureBlur] + [ProgressiveBlur]：整块按满强度半径
+/// 模糊**一次**，再用一条连续 alpha 遮罩从满强度擦到全透明。只有一份图像，
+/// 所以没有重影、没有档位断层，顶部也不透明。
 ///
 /// 不用裸 [BackdropFilter]：`ShaderMask` 会 `saveLayer`，里面读不到下层像素，
 /// 真机上整条带子会透明。[MiuixTextureBlur] 画的是采样位图，不受影响。
@@ -104,6 +104,7 @@ class RoamProgressiveBlur extends StatelessWidget {
     this.blurRadius = MiuixGlassTopAppBarDefaults.progressiveBlurRadius,
     this.fromTop = true,
     this.strength = 1,
+    this.startFraction = 0,
     this.endFraction = 0.72,
     this.curve = 1,
   });
@@ -123,6 +124,10 @@ class RoamProgressiveBlur extends StatelessWidget {
   /// 过渡结束位置（沿方向的 0..1）。带子越矮取值越接近 1。
   final double endFraction;
 
+  /// 满强度区结束位置（0..1）。顶栏要把「栏本身」这段留在满强度，
+  /// 只用下缘一截做过渡，所以取 0.6 左右。
+  final double startFraction;
+
   /// 衰减曲线：1 = 线性（与官方 curveKind 0 一致）。
   final double curve;
 
@@ -131,16 +136,20 @@ class RoamProgressiveBlur extends StatelessWidget {
     if (blurRadius <= 0 || strength <= 0) return const SizedBox.shrink();
     final source = backdrop;
     if (source == null) return const SizedBox.shrink();
+    final ef = endFraction.clamp(0.05, 1.0);
+    final sf = startFraction.clamp(0.0, ef - 0.02);
     final gradient = (fromTop ? ProgressiveBlur.top : ProgressiveBlur.bottom)
-        .copyWith(endFraction: endFraction.clamp(0.05, 0.98), curve: curve);
-    return Opacity(
-      opacity: strength.clamp(0.0, 1.0),
-      child: MiuixProgressiveTextureBlur(
-        backdrop: source,
-        blurRadius: blurRadius,
-        gradient: gradient,
-      ),
+        .copyWith(startFraction: sf, endFraction: ef, curve: curve);
+    final intensity = strength.clamp(0.0, 1.0);
+    final blur = MiuixProgressiveTextureBlur(
+      backdrop: source,
+      blurRadius: blurRadius,
+      gradient: gradient,
     );
+    // strength = 1 时不要多包一层 Opacity（那会再开一个 saveLayer）。
+    return intensity >= 0.999
+        ? blur
+        : Opacity(opacity: intensity, child: blur);
   }
 }
 

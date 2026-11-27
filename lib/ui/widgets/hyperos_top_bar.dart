@@ -144,20 +144,19 @@ class HyperosTopBar extends StatelessWidget {
                   top: -statusBarHeight,
                   left: 0,
                   right: 0,
-                  bottom: -MiuixGlassTopAppBarDefaults.bandOverhang,
+                  // 往下多探 84dp：过渡段必须在栏底**以下**展开，否则满强度
+                  // 区被压到几乎没有，栏内会透出正文。
+                  bottom: -84,
                   child: IgnorePointer(
                     child: Opacity(
                       opacity: progress,
-                      // 用库的 textureBlur + 官方 bandBlurMask（
-                      // `MiuixGlassTopAppBar` 画 band 的原样结构）；不再叠
-                      // bandMaterial 的三层灰调，深色页面上不会发灰。
                       child: RoamProgressiveBlur(
                         backdrop: miuixLayer,
-                        // 半径线性收到 0（曲线 1），过渡区铺满整条带子：
-                        // 衰减太快会在带子下缘切出一条硬边（正文像被拦腰
-                        // 截断）。半径给到 110，让栏内那段仍然是满强度。
                         blurRadius: 110,
-                        endFraction: 0.92,
+                        // 前 58%（状态栏 + 栏本身）保持满强度，最后 42%
+                        // 连续淡出，跨过栏底落到正文上（约 75dp）。
+                        startFraction: 0.58,
+                        endFraction: 1,
                       ),
                     ),
                   ),
