@@ -93,43 +93,14 @@ flutter build hap --release
 > `HOS_SDK_HOME`，否则 `webview_flutter_ohos` 在 Android 侧会报
 > `OhosViewController` 未定义。CI 中由 `tool/ci_build.sh` 统一处理。
 
-## 玻璃效果实现约定
-
-这部分是项目里最容易踩坑的地方，改动前请先看 `.claude/skills/flutter-miuix/references/80_blur.zh.md`。
-
-- **弹层**：`RoamPopupGlass` 标准态直接调用 miuix 官方表面构建器 `miuixGlassBottomSheetSurface` / `miuixGlassDialogSurface`，不自己拼模糊与描边；材质、圆角、描边全部由库出。
-- **顶栏渐隐**：`MiuixProgressiveTextureBlur` —— 单张满强度模糊图 + 连续 alpha 遮罩，不用「多档模糊叠加」（会产生重影、断层与卡顿）。
-- **采样源**：`RoamBackdropScope` 维护页面级 backdrop 和「最近活跃页」回退，解决在二级页打开弹层却糊到主页壁纸的问题。
-- **滑块**：`MiuixSlider` 在 `Column` 里需要 `SizedBox(width: double.infinity)` 撑满宽度，否则宽度坍缩为 0。
-
-## 自动化构建
-
-| 平台 | 工作流 | 触发 |
-|---|---|---|
-| GitCode | `.gitcode/workflows/build.yml` | push `main`、MR、`v*` 标签、手动 |
-| GitHub | `.github/workflows/build-release.yml` | `v*` 标签、手动；构建后发布 Release |
-
-两者共用 `tool/ci_build.sh`，产物为两个 release APK 和一个未签名 HAP。详细配置、缓存与排错见 [`CI.md`](CI.md)。
-
-版本发布时只需修改 `pubspec.yaml` 的 `version: x.y.z+build`，然后打标签：
-
-```bash
-git tag v1.0.43
-git push origin main --tags
-```
 
 ## 已知限制
 
 - HarmonyOS HAP 未签名，需要 DevEco Studio 自动签名或自备 `.p12/.cer/.p7b` 才能安装。
-- 鸿蒙端目前只做到「编译通过」，玻璃着色器、平台视图、选图通道尚未在真机验证。
 - 模糊采样基于快照（`MiuixLayerBackdropCapture`），快照分辨率固定 `pixelRatio: 1`；极快滚动时模糊画面比当前帧晚一帧，静止后对齐。
 
 ## 相关文档
 
 - [`CI.md`](CI.md) —— 自动构建、Release 发布、工具链与排错
 - [`HARMONYOS.md`](HARMONYOS.md) —— 鸿蒙工程改造、平台通道、签名与已知限制
-- [flutter_miuix 文档](https://compose-miuix-ui.github.io/miuix/zh_CN/) —— 组件与玻璃体系参考
-
-## 许可证
-
-私有项目，`publish_to: none`（不发布到 pub.dev）。
+- [miuix文档](https://compose-miuix-ui.github.io/miuix/zh_CN/) —— 组件与玻璃体系参考
