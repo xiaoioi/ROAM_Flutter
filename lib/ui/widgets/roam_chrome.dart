@@ -76,6 +76,18 @@ class _RoamPageScaffoldState extends State<RoamPageScaffold> {
   /// 内容是否已离开顶部。miuix 的顶栏按钮用它决定「玻璃底 + 描边」是否淡入。
   bool _scrolled = false;
 
+  /// 每次快照更新就把自己顶成「当前活跃采样源」：本页打开的弹层用自己的
+  /// context 查不到作用域（页面 context 在 `Scaffold.body` 之上），回退时
+  /// 靠它避免糊到上一层页面（比如在设置页里弹出主页壁纸的模糊）。
+  void _markActive() => RoamBackdropScope.markActive(_backdrop);
+
+  @override
+  void initState() {
+    super.initState();
+    _backdrop.addListener(_markActive);
+    RoamBackdropScope.markActive(_backdrop);
+  }
+
   bool _onScroll(ScrollNotification notification) {
     if (notification.depth != 0) return false;
     if (notification.metrics.axis != Axis.vertical) return false;
@@ -86,6 +98,8 @@ class _RoamPageScaffoldState extends State<RoamPageScaffold> {
 
   @override
   void dispose() {
+    _backdrop.removeListener(_markActive);
+    RoamBackdropScope.clearActive(_backdrop);
     _backdrop.dispose();
     super.dispose();
   }

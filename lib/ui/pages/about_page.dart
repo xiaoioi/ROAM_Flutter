@@ -67,7 +67,13 @@ class _AboutPageState extends State<AboutPage> {
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
+    // 本页打开的弹层查不到作用域（页面 context 在 Scaffold 之上），
+    // 靠「最近活跃」回退时必须是本页，不能是上一页。
+    _backdrop.addListener(_markActive);
+    RoamBackdropScope.markActive(_backdrop);
   }
+
+  void _markActive() => RoamBackdropScope.markActive(_backdrop);
 
   void _onScroll() {
     if (!_scroll.hasClients) return;
@@ -81,6 +87,8 @@ class _AboutPageState extends State<AboutPage> {
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _progress.dispose();
+    _backdrop.removeListener(_markActive);
+    RoamBackdropScope.clearActive(_backdrop);
     _backdrop.dispose();
     super.dispose();
   }

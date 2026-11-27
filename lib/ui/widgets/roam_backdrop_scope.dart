@@ -34,15 +34,36 @@ class RoamBackdropScope extends InheritedWidget {
   static MiuixLayerBackdrop? maybeOf(BuildContext context) =>
       maybeScopeOf(context)?.backdrop;
 
-  /// 适合交给 miuix 做折射采样的源；不可信时返回 null。
+  /// 最近产出过快照的页面级采样源，栈顶 = 当前最该被采样的那一页。
   ///
-  /// 没有作用域时回退到全局采样器 [miuixBackdrop]：浏览器外壳
-  /// （`browser_shell`）的菜单 / 标签 / 搜索抽屉是从 State 的 context 打开的，
-  /// 而全局捕获器在它下面，查不到作用域——不回退的话这些抽屉全都没有
-  /// backdrop，官方表面只能画不透明兜底色。
+  /// 为什么要这个：页面（`SettingsPage`、`DownloadsPage`…）自己的 `build`
+  /// context 位于 [RoamPageScaffold] **之上**，而作用域挂在 `Scaffold.body`
+  /// 里，页面里 `showRoamSheet(context)` 拿到的是页面自己的 context，向上查
+  /// 不到作用域。以前这里直接回退到全局 `miuixBackdrop`（浏览器外壳的捕获层，
+  /// 内容是主页 tab），结果在设置页打开的弹层里糊的是**主页的壁纸**。
+  ///
+  /// 现在回退到「最后出过快照的那一页」：被压在下层的路由不再 paint，也就
+  /// 不再更新快照，所以栈顶必然是用户正在看的这一页。
+  static final List<MiuixBackdrop> _active = [];
+
+  static void markActive(MiuixBackdrop backdrop) {
+    _active
+      ..remove(backdrop)
+      ..add(backdrop);
+  }
+
+  static void clearActive(MiuixBackdrop backdrop) => _active.remove(backdrop);
+
+  static MiuixBackdrop? get _current => _active.isEmpty ? null : _active.last;
+
+  /// 适合交给 miuix 做折射采样的源；不可信时返回 null。
   static MiuixBackdrop? samplingOf(BuildContext context) {
     final scope = maybeScopeOf(context);
     if (scope != null) return scope.trustSnapshot ? scope.backdrop : null;
+    final active = _current;
+    if (active != null && active.hasContent) return active;
+    // 浏览器外壳（`browser_shell`）的抽屉从 State 的 context 打开，拿不到
+    // 作用域；此时全局捕获层就是它背后的内容，回退它是正确的。
     return miuixBackdrop.hasContent ? miuixBackdrop : null;
   }
 

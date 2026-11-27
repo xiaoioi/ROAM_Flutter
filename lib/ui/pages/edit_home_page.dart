@@ -34,8 +34,21 @@ class _EditHomePageState extends State<EditHomePage> {
   /// backdrop 是 null，miuix 的玻璃只能画不透明兜底色——「弹出框一点都不糊」。
   final MiuixLayerBackdrop _backdrop = MiuixLayerBackdrop();
 
+  /// 本页打开的抽屉查不到作用域（页面 context 在 Scaffold 之上），
+  /// 靠「最近活跃」回退时必须是本页，不能是上一页。
+  void _markActive() => RoamBackdropScope.markActive(_backdrop);
+
+  @override
+  void initState() {
+    super.initState();
+    _backdrop.addListener(_markActive);
+    RoamBackdropScope.markActive(_backdrop);
+  }
+
   @override
   void dispose() {
+    _backdrop.removeListener(_markActive);
+    RoamBackdropScope.clearActive(_backdrop);
     _backdrop.dispose();
     super.dispose();
   }

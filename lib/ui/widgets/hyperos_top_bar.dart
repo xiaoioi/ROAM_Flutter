@@ -141,22 +141,28 @@ class HyperosTopBar extends StatelessWidget {
               // 高度按「栏高 + bandOverhang」向上多探一点，与库一致。
               if (showBand)
                 Positioned(
-                  top: -statusBarHeight,
+                  // 一直铺到屏幕最顶端：状态栏那一段也必须是带子的「内部」，
+                  // 否则模糊核在 y=0 处没有上方邻域，会露出未被糊的缝。
+                  top: -statusBarHeight - 24,
                   left: 0,
                   right: 0,
-                  // 往下多探 84dp：过渡段必须在栏底**以下**展开，否则满强度
-                  // 区被压到几乎没有，栏内会透出正文。
-                  bottom: -84,
+                  // 往下多探 120dp：过渡段必须在栏底**以下**展开，否则满强度
+                  // 区被压到几乎没有，栏内会透出正文；过渡短于一行正文时
+                  // 看起来就是「一行糊、下一行完全清晰」，没有渐变感。
+                  bottom: -120,
                   child: IgnorePointer(
                     child: Opacity(
                       opacity: progress,
                       child: RoamProgressiveBlur(
                         backdrop: miuixLayer,
                         blurRadius: 110,
-                        // 前 58%（状态栏 + 栏本身）保持满强度，最后 42%
-                        // 连续淡出，跨过栏底落到正文上（约 75dp）。
-                        startFraction: 0.58,
+                        // 前一半（状态栏 + 栏本身）保持满强度，后半段
+                        // 连续淡出，跨过栏底落到正文上（约 112dp）。
+                        // curve 0.55：让「糊」在过渡段保持得更久（线性衰减
+                        // 会让正文在中段就看起来已经清晰了）。
+                        startFraction: 0.5,
                         endFraction: 1,
+                        curve: 0.55,
                       ),
                     ),
                   ),
