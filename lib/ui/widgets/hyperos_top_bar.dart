@@ -148,17 +148,10 @@ class HyperosTopBar extends StatelessWidget {
                   child: IgnorePointer(
                     child: Opacity(
                       opacity: progress,
-                      // 只糊不改色：miuix 的 bandMaterial 自带三层灰调
-                      // （深色 #565656 + #3F3F3F），在深色页面上就是一条
-                      // 灰遮罩；渐隐本来就只该让内容糊掉，不能顺带压暗。
-                      //
-                      // endFraction 按「状态栏 + 栏高」占整条带子的比例给：
-                      // 这段保持满强度，剩下的 bandOverhang 才过渡到清晰。
-                      child: RoamProgressiveBlur(
-                        backdrop: miuixLayer,
-                        endFraction: 0.78,
-                        curve: 0.7,
-                      ),
+                      // 用库的 textureBlur + 官方 bandBlurMask（
+                      // `MiuixGlassTopAppBar` 画 band 的原样结构）；不再叠
+                      // bandMaterial 的三层灰调，深色页面上不会发灰。
+                      child: RoamProgressiveBlur(backdrop: miuixLayer),
                     ),
                   ),
                 ),

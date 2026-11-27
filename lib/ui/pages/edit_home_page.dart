@@ -548,17 +548,21 @@ class _DimSheet extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 // 拖动条用 miuix 的 Slider：这一层抽屉强制深色，所以颜色取深色那套。
-                MiuixSlider(
-                  value: value,
-                  min: 0,
-                  max: 0.8,
-                  steps: 16,
-                  enabled: hasWallpaper,
-                  onValueChanged: hasWallpaper
-                      ? (v) => controller.updateSettings(
-                          settings.copyWith(wallpaperDim: v),
-                        )
-                      : null,
+                // 同上：CustomPaint 需要撑满的宽度，否则整条滑块不可见。
+                SizedBox(
+                  width: double.infinity,
+                  child: MiuixSlider(
+                    value: value,
+                    min: 0,
+                    max: 0.8,
+                    steps: 16,
+                    enabled: hasWallpaper,
+                    onValueChanged: hasWallpaper
+                        ? (v) => controller.updateSettings(
+                            settings.copyWith(wallpaperDim: v),
+                          )
+                        : null,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Row(

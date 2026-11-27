@@ -172,10 +172,19 @@ OS4 参数与完整接线示例见 [中文](references/110_os4.zh.md) / [English
 > 已经画过的像素，跨层读到的是空图层。于是「高斯在跑、但底下什么都没有」，真机表现为面板
 > 一片实色。玻璃必须走快照（`MiuixBackdrop`），不能走实时 `BackdropFilter`。
 
-> **边缘渐隐用渐进模糊，不要用「整块模糊 + alpha 擦除」**：`flutter_miuix` 1.4.0 没有
-> `progressiveTextureBlur`，项目内 `lib/ui/widgets/miuix_progressive_blur.dart` 按官方 API
-> 补了 `MiuixProgressiveTextureBlur`（多档 `MiuixTextureBlur` + 三角权重遮罩）。细节见
-> [references/80_blur.zh.md](references/80_blur.zh.md) 的「渐进模糊」一节。
+> **边缘渐隐 = `MiuixTextureBlur` + `bandBlurMask()`**：跟 `MiuixGlassTopAppBar` 画 band 的
+> 内部结构一致（`ShaderMask(dstIn)` 套一层 `MiuixTextureBlur`），不要自己拼多档模糊、也不要
+> 套裸 `BackdropFilter`（`saveLayer` 后读不到下层，真机整条带子透明）。细节见
+> [references/80_blur.zh.md](references/80_blur.zh.md) 的「边缘渐隐」一节。
+
+> **弹层不要用 `MiuixGlassPanel` 的折射表面**：它的 shader 只在面板边缘采样/拉伸，中间接近
+> 原图再叠色调，真机就是「边缘一圈糊、中间实色」（局部模糊）。要整块糊就用
+> `MiuixTextureBlur` 铺满面板，色调用 `MiuixGlassMaterials.dialogGlass()` 的 layers 转成
+> `BlurColors`，描边用 `MiuixGlassStrokes.forTheme()`。
+
+> **`MiuixSlider` 必须给宽度**：内部是 `SizedBox(height: 28)` + `CustomPaint`（无 child），
+> 在 `Column` 里宽度会坍缩成 0，整条滑块不可见。包一层
+> `SizedBox(width: double.infinity)`（或放进 `Expanded`）。
 
 ## 组件目录索引
 
