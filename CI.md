@@ -1,13 +1,16 @@
 # 自动构建说明（GitCode Actions / GitHub Actions）
 
-仓库已配置两套工作流：
+仓库已配置三套工作流：
 
 | 平台 | 工作流文件 | 用途 |
 |---|---|---|
+| GitHub | `.github/workflows/ci.yml` | 每次 push `main` / PR / 手动触发，跑 `flutter analyze` + `flutter test`（`tool/ci_build.sh check`） |
 | GitCode | `.gitcode/workflows/build.yml` | 构建产物上传为流水线制品 |
 | GitHub | `.github/workflows/build-release.yml` | 构建产物直接发布到 GitHub Release |
 
-两者共用 `tool/ci_build.sh`，构建内容一致：
+`ci.yml` 只做检查、不产出安装包，首次运行需准备 Flutter + DevEco 工具链（约 3GB，之后由 `actions/cache` 缓存），普通提交通常一两分钟内完成。
+
+构建工作流共用 `tool/ci_build.sh`，构建内容一致：
 
 - Android：`arm64-v8a` / `armeabi-v7a` 两个 release APK
 - HarmonyOS NEXT：未签名 HAP（versionCode 与 pubspec.yaml 对齐）

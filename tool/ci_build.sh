@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # 星环 Roam · GitCode Action 一站式构建脚本
-# 用法: bash tool/ci_build.sh android | bash tool/ci_build.sh hap
+# 用法: bash tool/ci_build.sh android | bash tool/ci_build.sh hap | bash tool/ci_build.sh check
 set -euo pipefail
 
 TARGET="${1:-}"
 case "$TARGET" in
-  android|hap) ;;
-  *) echo "用法: $0 <android|hap>" >&2; exit 2 ;;
+  android|hap|check) ;;
+  *) echo "用法: $0 <android|hap|check>" >&2; exit 2 ;;
 esac
 
 log() { printf '\n[roam-ci] %s\n' "$*"; }
@@ -164,6 +164,17 @@ fi
 
 log "flutter pub get"
 flutter pub get
+
+# check：只做静态分析与测试，不构建产物。供 .github/workflows/ci.yml 在每次
+# push / PR 时调用；仍然复用上面同一套 Flutter + DevEco 工具链与缓存。
+if [[ "$TARGET" == "check" ]]; then
+  log "flutter analyze lib test"
+  flutter analyze lib test
+  log "flutter test"
+  flutter test
+  log "检查完成"
+  exit 0
+fi
 
 VERSION="$(awk -F'[:+]' '/^version:/ {gsub(/[ \t]/, "", $2); print $2; exit}' pubspec.yaml)"
 [[ -n "$VERSION" ]] || { echo "[roam-ci] 无法从 pubspec.yaml 读取版本号" >&2; exit 1; }

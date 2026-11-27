@@ -1,0 +1,51 @@
+name: 星环 Roam · CI（静态检查与测试）
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'dist/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roam-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-test:
+    name: 静态分析 + 单元测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+
+      - name: 设置 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 缓存工具链与依赖
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/roam-ci
+            ~/.pub-cache
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: roam-build-v1-${{ hashFiles('pubspec.yaml', 'pubspec.lock', 'tool/ci_build.sh', '.github/workflows/ci.yml') }}
+          restore-keys: |
+            roam-build-v1-
+
+      - name: 静态分析与测试
+        run: bash tool/ci_build.sh check
