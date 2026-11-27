@@ -172,9 +172,10 @@ OS4 参数与完整接线示例见 [中文](references/110_os4.zh.md) / [English
 > 已经画过的像素，跨层读到的是空图层。于是「高斯在跑、但底下什么都没有」，真机表现为面板
 > 一片实色。玻璃必须走快照（`MiuixBackdrop`），不能走实时 `BackdropFilter`。
 
-> **边缘渐隐 = `progressiveTextureBlur` 语义**：库 1.4.0 没移植，项目内
-> `lib/ui/widgets/progressive_texture_blur.dart` 补齐（多档库的 `MiuixTextureBlur` + 三角权重
-> 交叉淡化，端点权重必须为 1）。不要用「单张糊图 + `bandBlurMask` 擦除」冒充，也不要套裸
+> **边缘渐隐 = `progressiveTextureBlur`（已按 Kotlin 原版移植为 shader）**：库 1.4.0 没移植，
+> 项目内 `shaders/progressive_blur.frag` + `lib/ui/widgets/progressive_texture_blur.dart` 按
+> 原版算法实现（逐像素 `radius = maxRadius*(1-smooth)`，二维螺旋采样近似 H/V 两 pass，
+> 按 sigma 降采样 + 纹理缓存）。不要退回「多档 `MiuixTextureBlur` 叠加」，也不要套裸
 > `BackdropFilter`。细节见 [references/80_blur.zh.md](references/80_blur.zh.md) 的「边缘渐隐」一节。
 
 > **弹层不要用 `MiuixGlassPanel` 的折射表面**：它的 shader 只在面板边缘采样/拉伸，中间接近

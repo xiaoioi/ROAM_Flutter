@@ -105,8 +105,7 @@ class RoamProgressiveBlur extends StatelessWidget {
     this.fromTop = true,
     this.strength = 1,
     this.endFraction = 0.72,
-    this.curve = 0.9,
-    this.levels = 5,
+    this.curve = 1,
   });
 
   /// 页面级背景采样源（与顶栏玻璃共用同一份快照）。
@@ -124,11 +123,8 @@ class RoamProgressiveBlur extends StatelessWidget {
   /// 过渡结束位置（沿方向的 0..1）。带子越矮取值越接近 1。
   final double endFraction;
 
-  /// 衰减曲线：<1 让前段更糊、后段更快变清晰。
+  /// 衰减曲线：1 = 线性（与官方 curveKind 0 一致）。
   final double curve;
-
-  /// 档数。
-  final int levels;
 
   @override
   Widget build(BuildContext context) {
@@ -143,7 +139,6 @@ class RoamProgressiveBlur extends StatelessWidget {
         backdrop: source,
         blurRadius: blurRadius,
         gradient: gradient,
-        levels: levels,
       ),
     );
   }

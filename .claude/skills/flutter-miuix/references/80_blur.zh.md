@@ -91,31 +91,36 @@ Widget tree = Column(
 - 取样背景快照时向外扩约 3σ margin（配 `TileMode.clamp`），让模糊边缘有真实邻域，避免边缘变暗；但绘制被裁进组件自身边界（`clipRect`），不会溢出（无 shape 时也不溢出）。
 - 首帧快照就绪即出模糊（无异步着色器加载）。
 
-### 边缘渐隐：progressiveTextureBlur
+### 边缘渐隐：progressiveTextureBlur（已按 Kotlin 原版移植为 shader）
 
-官方 compose 版 `miuix-blur` 为边缘渐隐提供的 Modifier 是
-`Modifier.progressiveTextureBlur(backdrop, shape, blurRadius, gradient =
-ProgressiveBlur.Top/Bottom/Left/Right, colors)`：模糊半径沿方向从满强度 **连续
-衰减到 0**，清晰端保持全分辨率。`ProgressiveBlur` 有 `angle` / `startFraction`
-/ `endFraction` / `curve`。
+官方 compose 版在 `miuix-blur` 里：
 
-> **`flutter_miuix` 1.4.0（pub 最新）没有移植它**。项目内补齐在
-> `lib/ui/widgets/progressive_texture_blur.dart`：`ProgressiveBlur` +
-> `MiuixProgressiveTextureBlur`，参数与官方一一对应。实现方式是把半径线性分成
-> `levels` 档（每档都用库自己的 `MiuixTextureBlur` 画），档间用**三角权重**
-> （partition of unity）交叉淡化，任一位置权重和恒为 1。
+```
+Modifier.progressiveTextureBlur(backdrop, shape, blurRadius,
+    gradient = ProgressiveBlur.Top, noiseCoefficient, colors, ...)
+  → computeProgressiveGradient()        归一化成 gradVec + gradOffset
+  → createProgressiveBlurEffect()       逐像素 radius = maxRadius * (1 - smooth)
+  → 半径随位置变化的可分离高斯（H/V 两个 RenderEffect pass）
+```
 
-三条硬约束：
+**`flutter_miuix` 1.4.0 没有移植**。本项目按原版算法移植到
+`shaders/progressive_blur.frag` + `lib/ui/widgets/progressive_texture_blur.dart`
+（`ProgressiveBlur` / `MiuixProgressiveTextureBlur`）：
 
-1. **端点权重必须是 1**：清晰端那档半径 0（画原图）、满强度端那档半径最大。
-   端点 alpha 写成 0 会让两端露出中间档，观感就是「渐隐不对/顶部反而不糊」。
-2. **不要套裸 `BackdropFilter`**：`ShaderMask` 会 `saveLayer`，里面读不到下层
-   像素，真机上整条带子直接透明。`MiuixTextureBlur` 画的是采样位图，不受影响。
-3. **不要用「单张糊图 + `bandBlurMask` 擦除」冒充**：`MiuixGlassTopAppBar` 的
-   band 是这么画的（模糊恒定 + 下缘淡出），那是栏的用法；边缘渐隐要的是半径
-   随位置衰减，否则中段没有「半糊」的过渡，看起来就是一条糊带淡出。
+- `raw = clamp(dot(q, gradVec) + gradOffset, 0, 1)`、`smooth = pow(raw, curve)`、
+  `radius = maxRadius * (1 - smooth)`、`sigma = radius*.5 + .5` 与原版逐行一致。
+- 原版 H/V 两 pass，FragmentShader 只能单 pass → 二维螺旋采样（40 taps，
+  黄金角错开）近似同一核。
+- 卷积在 Dart 侧按 sigma 降采样的纹理上做（1×/2×，封顶 2×：原版 8× 有可分离
+  卷积撑着，单 pass 二维采样在 8× 上会出方块）；降采样时加 1.2σ 预模糊消方块。
+- 纹理按（快照身份+几何+参数）缓存，静止时不重建；清晰端 radius<0.6 直接采样
+  原图，所以是像素级锐利。
 
-### Bloom 高光边框### Bloom 高光边框### Bloom 高光边框
+**不要**回到「多张不同半径的 `MiuixTextureBlur` 叠加 + 三角遮罩」：那是多档
+混合的近似，半径不连续、每档一次全尺寸高斯（延迟大），递进方式与原版不同。
+也不要套裸 `BackdropFilter`（`ShaderMask`/`saveLayer` 后读不到下层）。
+
+### Bloom 高光边框### Bloom 高光边框### Bloom 高光边框### Bloom 高光边框
 
 圆角矩形 SDF + 3D 半球 rim 法线 + 方向光，画出被照亮的玻璃边缘；`BlendMode.plus` 叠加。
 
