@@ -172,11 +172,12 @@ OS4 参数与完整接线示例见 [中文](references/110_os4.zh.md) / [English
 > 已经画过的像素，跨层读到的是空图层。于是「高斯在跑、但底下什么都没有」，真机表现为面板
 > 一片实色。玻璃必须走快照（`MiuixBackdrop`），不能走实时 `BackdropFilter`。
 
-> **边缘渐隐 = `progressiveTextureBlur`（已按 Kotlin 原版移植为 shader）**：库 1.4.0 没移植，
-> 项目内 `shaders/progressive_blur.frag` + `lib/ui/widgets/progressive_texture_blur.dart` 按
-> 原版算法实现（逐像素 `radius = maxRadius*(1-smooth)`，二维螺旋采样近似 H/V 两 pass，
-> 按 sigma 降采样 + 纹理缓存）。不要退回「多档 `MiuixTextureBlur` 叠加」，也不要套裸
-> `BackdropFilter`。细节见 [references/80_blur.zh.md](references/80_blur.zh.md) 的「边缘渐隐」一节。
+> **边缘渐隐 = 分档 `ImageFilter.blur` + 三角权重**：库 1.4.0 没移植 `progressiveTextureBlur`，
+> 项目内 `lib/ui/widgets/progressive_texture_blur.dart` 按原版半径曲线分档，每档用 GPU 的
+> `ImageFilter.blur`（不要自己写 FragmentShader 卷积——采样点一稀就成碎块、还慢），档位用
+> `BlendMode.plus` 合成、遮罩用显式坐标的 `ui.Gradient.linear`。三个坑：`saveLayer` 的 bounds
+> 不能取带子本身（会连滤镜输入一起裁掉）、`Alignment` 渐变在非正方形区域会错位、`srcOver`
+> 合成会留空隙导致页面透上来。细节见 [references/80_blur.zh.md](references/80_blur.zh.md)。
 
 > **弹层不要用 `MiuixGlassPanel` 的折射表面**：它的 shader 只在面板边缘采样/拉伸，中间接近
 > 原图再叠色调，真机就是「边缘一圈糊、中间实色」（局部模糊）。要整块糊就用

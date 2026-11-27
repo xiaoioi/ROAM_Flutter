@@ -153,9 +153,11 @@ class HyperosTopBar extends StatelessWidget {
                       // bandMaterial 的三层灰调，深色页面上不会发灰。
                       child: RoamProgressiveBlur(
                         backdrop: miuixLayer,
-                        // 满强度铺到栏底，剩下 bandOverhang 那段过渡到清晰。
-                        endFraction: 0.82,
-                        curve: 0.85,
+                        // 半径线性收到 0（曲线 1），过渡区铺满整条带子：
+                        // 衰减太快会在带子下缘切出一条硬边（正文像被拦腰
+                        // 截断）。半径给到 110，让栏内那段仍然是满强度。
+                        blurRadius: 110,
+                        endFraction: 0.92,
                       ),
                     ),
                   ),

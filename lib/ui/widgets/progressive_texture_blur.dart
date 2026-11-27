@@ -4,18 +4,27 @@
 //   fun Modifier.progressiveTextureBlur(backdrop, shape, blurRadius,
 //       gradient = ProgressiveBlur.Top, noiseCoefficient, colors, ...)
 //
-// 实现路径（与 Kotlin 侧一一对应）：
-//   ProgressiveBlur(angle/startFraction/endFraction/curve)
-//     → computeProgressiveGradient() 归一化成 gradVec + gradOffset
-//     → createProgressiveBlurEffect()：逐像素 radius = maxRadius * (1 - smooth)
-//     → 半径随位置变化的高斯（原版 H/V 两 pass，这里单 pass 螺旋采样）
+// 原版的关键有两点，缺一不可：
+//   1. 半径沿方向**连续**衰减（不是几张不同半径的图硬叠）；
+//   2. 每一处模糊都是完整的**可分离高斯**（H/V 两 pass RenderEffect），
+//      所以整块内容是一起散开的，不会出现离散采样点的重影。
 //
-// 与上一版「多张不同半径的图叠在一起」的区别：半径是**逐像素**算出来的，
-// 中间段是真正的中等模糊，清晰端是原图（radius→0 早退），所以没有台阶、
-// 没有多档混合的重影，也不会因为叠 5 层全尺寸高斯而卡顿。
+// 上一版用 FragmentShader 逐像素算半径 + 40 个螺旋采样点近似二维高斯：
+// 半径一大采样就变稀，画面被拆成一个个错位的块（看起来「像碎成好几块」），
+// 而且每帧整条带子都要跑一遍逐像素循环——延迟也来自这里。
 //
-// Flutter 侧只多做一件事：按 sigma 把快照降采样（1×/2×/4×/8×）再卷积，
-// 对齐原版 `downscaleFactor`（sigma<4.5 → 1×，<12 → 2×，<32 → 4×，<115 → 8×）。
+// 现在的做法：
+//   • 半径分档，档位在 u 轴上按 `pow(i/(n-1), 1/curve)` 摆放（与原版逐像素
+//     半径曲线同一个函数），相邻档用三角权重做线性插值；三角权重天然构成
+//     单位分解（Σw ≡ 1），所以插值出来是连续的「半糊」过渡，没有台阶。
+//   • 每档的模糊交给 `ImageFilter.blur`：Impeller/Skia 内部就是降采样 + 可分离
+//     高斯，GPU 原生路径，没有块状伪影，也没有逐像素循环。
+//   • 每档先 `saveLayer` 隔离、`dstIn` 打上权重遮罩再合成。全程只有 GPU 绘制，
+//     没有 `toImageSync`、没有纹理重建。
+//
+// ⚠️ 实测坑：`canvas.saveLayer(bounds, Paint())` 的 bounds 如果取得和带子一样大，
+// 那次 `drawImageRect` 的 `imageFilter` 会被连同输入一起裁掉（表现为「一点没糊」）。
+// 所以 saveLayer 的 bounds 必须用采样区（dst）。
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -42,7 +51,7 @@ class ProgressiveBlur {
   /// 过渡结束位置（之后 radius = 0，完全清晰）。
   final double endFraction;
 
-  /// 衰减指数：0/1 = 线性，>1 前段更糊。
+  /// 衰减指数：1 = 线性，>1 前段更糊。
   final double curve;
 
   static const top = ProgressiveBlur();
@@ -67,7 +76,7 @@ class ProgressiveBlur {
     final ax = math.cos(rad);
     final ay = math.sin(rad);
     final projMin = (ax > 0 ? 0.0 : ax) + (ay > 0 ? 0.0 : ay);
-    final projMax = (ax > 0 ? ax : 0.0) + (ay > 0 ? ay : 0.0);
+    final projMax = (ax > 0 ? ax : 0.0) + (ay > 0 ? 0.0 : ay);
     final span = projMax - projMin;
     final full = projMin + startFraction * span;
     final zero = projMin + endFraction * span;
@@ -80,7 +89,7 @@ class ProgressiveBlur {
 ///
 /// 需要 [backdrop] 提供快照（页面级 [MiuixLayerBackdrop]），不能跨 Navigator
 /// 层实时采样。
-class MiuixProgressiveTextureBlur extends StatefulWidget {
+class MiuixProgressiveTextureBlur extends StatelessWidget {
   const MiuixProgressiveTextureBlur({
     super.key,
     required this.backdrop,
@@ -88,6 +97,7 @@ class MiuixProgressiveTextureBlur extends StatefulWidget {
     this.gradient = ProgressiveBlur.top,
     this.shape,
     this.enabled = true,
+    this.levels = 7,
     this.child,
   });
 
@@ -99,72 +109,26 @@ class MiuixProgressiveTextureBlur extends StatefulWidget {
   final ProgressiveBlur gradient;
   final ShapeBorder? shape;
   final bool enabled;
+
+  /// 半径档数。档间是线性插值，6 档在 200dp 的带子上已经看不出分段。
+  final int levels;
+
   final Widget? child;
 
   @override
-  State<MiuixProgressiveTextureBlur> createState() =>
-      _MiuixProgressiveTextureBlurState();
-}
-
-class _MiuixProgressiveTextureBlurState
-    extends State<MiuixProgressiveTextureBlur> {
-  static ui.FragmentShader? _shared;
-  static bool _failed = false;
-
-  ui.FragmentShader? _shader;
-
-  @override
-  void initState() {
-    super.initState();
-    _shader = _shared;
-    if (_shared == null && !_failed) _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final program = await ui.FragmentProgram.fromAsset(
-        'shaders/progressive_blur.frag',
-      );
-      _shared = program.fragmentShader();
-      if (mounted) setState(() => _shader = _shared);
-    } catch (_) {
-      _failed = true;
-      // 加载失败时退回单层纹理模糊（不做渐进），至少不会空白。
-      if (mounted) setState(() {});
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (!widget.enabled || widget.blurRadius <= 0) {
-      return widget.child ?? const SizedBox.shrink();
+    if (!enabled || blurRadius <= 0 || levels < 2) {
+      return child ?? const SizedBox.shrink();
     }
-    final shader = _shader;
-
-    Widget blur;
-    if (shader != null) {
-      blur = _ProgressiveBlur(
-        backdrop: widget.backdrop,
-        blurRadius: widget.blurRadius,
-        gradient: widget.gradient,
-        shader: shader,
-      );
-    } else {
-      // 兜底：库的 textureBlur + 官方 band 淡出（渐进 shader 就绪前的首帧）。
-      blur = ShaderMask(
-        blendMode: BlendMode.dstIn,
-        shaderCallback:
-            MiuixGlassTopAppBarDefaults.bandBlurMask().createShader,
-        child: MiuixTextureBlur(
-          backdrop: widget.backdrop,
-          blurRadius: widget.blurRadius,
-        ),
-      );
-    }
-
-    final sized = SizedBox.expand(child: blur);
-    if (widget.shape == null) return sized;
-    return ClipPath(clipper: ShapeBorderClipper(shape: widget.shape!), child: sized);
+    final Widget blur = _ProgressiveBlur(
+      backdrop: backdrop,
+      blurRadius: blurRadius,
+      gradient: gradient,
+      levels: levels,
+    );
+    final Widget sized = SizedBox.expand(child: blur);
+    if (shape == null) return sized;
+    return ClipPath(clipper: ShapeBorderClipper(shape: shape!), child: sized);
   }
 }
 
@@ -173,20 +137,20 @@ class _ProgressiveBlur extends SingleChildRenderObjectWidget {
     required this.backdrop,
     required this.blurRadius,
     required this.gradient,
-    required this.shader,
+    required this.levels,
   });
 
   final MiuixBackdrop backdrop;
   final double blurRadius;
   final ProgressiveBlur gradient;
-  final ui.FragmentShader shader;
+  final int levels;
 
   @override
   RenderObject createRenderObject(BuildContext context) => _RenderProgressive(
     backdrop: backdrop,
     blurRadius: blurRadius,
     gradient: gradient,
-    shader: shader,
+    levels: levels,
   );
 
   @override
@@ -195,8 +159,27 @@ class _ProgressiveBlur extends SingleChildRenderObjectWidget {
       ..backdrop = backdrop
       ..blurRadius = blurRadius
       ..gradient = gradient
-      ..shader = shader;
+      ..levels = levels;
   }
+}
+
+/// 单个档位：模糊半径 + 三角权重 (stops, alphas) + 该档覆盖的 u 区间。
+class _Layer {
+  const _Layer({
+    required this.sigma,
+    required this.stops,
+    required this.alphas,
+    required this.u0,
+    required this.u1,
+  });
+
+  final double sigma;
+  final List<double> stops;
+  final List<double> alphas;
+
+  /// 遮罩不为零的 u 区间，用来把这一档的绘制裁成窄条（省填充率）。
+  final double u0;
+  final double u1;
 }
 
 class _RenderProgressive extends RenderProxyBox {
@@ -204,11 +187,11 @@ class _RenderProgressive extends RenderProxyBox {
     required MiuixBackdrop backdrop,
     required double blurRadius,
     required ProgressiveBlur gradient,
-    required ui.FragmentShader shader,
+    required int levels,
   }) : _backdrop = backdrop,
        _blurRadius = blurRadius,
        _gradient = gradient,
-       _shader = shader {
+       _levels = levels {
     _backdrop.addListener(markNeedsPaint);
   }
 
@@ -234,21 +217,11 @@ class _RenderProgressive extends RenderProxyBox {
     markNeedsPaint();
   }
 
-  ui.FragmentShader _shader;
-  set shader(ui.FragmentShader v) {
-    if (identical(_shader, v)) return;
-    _shader = v;
+  int _levels;
+  set levels(int v) {
+    if (_levels == v) return;
+    _levels = v;
     markNeedsPaint();
-  }
-
-  /// 降采样纹理缓存：快照/几何/参数不变时直接复用，避免静止画面每帧重建。
-  ui.Image? _tex;
-  Object? _texKey;
-
-  @override
-  void detach() {
-    _backdrop.removeListener(markNeedsPaint);
-    super.detach();
   }
 
   @override
@@ -258,19 +231,76 @@ class _RenderProgressive extends RenderProxyBox {
   }
 
   @override
+  void detach() {
+    _backdrop.removeListener(markNeedsPaint);
+    super.detach();
+  }
+
+  @override
   void dispose() {
     _backdrop.removeListener(markNeedsPaint);
-    _tex?.dispose();
-    _tex = null;
     super.dispose();
   }
 
-  /// 降采样倍率。原版按 sigma 分 1×/2×/4×/8×，但它有 H/V 两个可分离 pass，
-  /// 单 pass 二维采样在 8× 纹理上会出块，这里封顶 4×。
-  int _downscale(double radius) {
-    final sigma = radius * 0.45;
-    if (sigma < 10) return 1;
-    return 2;
+  /// 档位表。`sigma = radius * .5 + .5`（与原版一致），u 轴位置由原版曲线反解。
+  List<_Layer> _layers(double maxRadius) {
+    final n = _levels;
+    final g = _gradient;
+    final curve = g.curve <= 0 ? 1.0 : g.curve;
+    final sf = g.startFraction;
+    final ef = g.endFraction;
+
+    final u = List<double>.filled(n, 0);
+    final s = List<double>.filled(n, 0);
+    for (var i = 0; i < n; i++) {
+      // 反解：smooth(u_i) = i/(n-1) → u_i，再线性映射到 box 投影参数 s。
+      u[i] = math.pow(i / (n - 1), 1 / curve).toDouble();
+      s[i] = (sf + u[i] * (ef - sf)).clamp(0.0, 1.0);
+    }
+
+    final out = <_Layer>[];
+    for (var i = 0; i < n; i++) {
+      final radius = maxRadius * (1 - i / (n - 1));
+      // 原版 sigma = radius*.5+.5；这里取 .62，同一 radius 下模糊更实一档
+      // （「模糊程度不够」的反馈），过渡段宽度不变。
+      final sigma = radius * 0.55 + 0.5;
+
+      final stops = <double>[];
+      final alphas = <double>[];
+      void add(double t, double a) {
+        final v = t.clamp(0.0, 1.0);
+        if (stops.isNotEmpty && (v - stops.last).abs() < 1e-4) {
+          if (a > alphas.last) alphas[alphas.length - 1] = a;
+          return;
+        }
+        stops.add(v);
+        alphas.add(a);
+      }
+
+      if (i == 0) {
+        add(0, 1);
+        add(s[1], 0);
+      } else if (i == n - 1) {
+        add(s[n - 2], 0);
+        add(1, 1);
+      } else {
+        add(s[i - 1], 0);
+        add(s[i], 1);
+        add(s[i + 1], 0);
+      }
+      if (stops.length >= 2) {
+        out.add(
+          _Layer(
+            sigma: sigma,
+            stops: stops,
+            alphas: alphas,
+            u0: i == 0 ? -1 : u[i - 1],
+            u1: i == n - 1 ? 2 : u[i + 1],
+          ),
+        );
+      }
+    }
+    return out;
   }
 
   @override
@@ -287,8 +317,10 @@ class _RenderProgressive extends RenderProxyBox {
     // 组件在快照像素空间里的位置。
     final compL = (selfGlobal.dx - bg.dx) * dpr;
     final compT = (selfGlobal.dy - bg.dy) * dpr;
-    final pad = _blurRadius * dpr;
 
+    final maxSigma = _blurRadius * 0.55 + 0.5;
+    // 采样区按 3σ 外扩：高斯核要吃进带子外面的像素，否则上缘会掉色。
+    final pad = maxSigma * 3 * dpr;
     final l = math.max(0.0, compL - pad);
     final t = math.max(0.0, compT - pad);
     final r = math.min(image.width.toDouble(), compL + size.width * dpr + pad);
@@ -298,67 +330,98 @@ class _RenderProgressive extends RenderProxyBox {
       return;
     }
 
-    final scale = _downscale(_blurRadius);
-    final tw = ((r - l) / scale).round().clamp(1, 4096);
-    final th = ((b - t) / scale).round().clamp(1, 4096);
-
-    // 降采样快照区域：纹理越小，单 pass 卷积的采样越密、越省。
-    // 缓存键包含快照身份与全部几何参数，静止时不再每帧重建纹理。
-    final key = (
-      identityHashCode(image),
-      l,
-      t,
-      r,
-      b,
-      tw,
-      th,
-      scale,
+    final src = Rect.fromLTRB(l, t, r, b);
+    final dst = Rect.fromLTRB(
+      offset.dx + (l - compL) / dpr,
+      offset.dy + (t - compT) / dpr,
+      offset.dx + (r - compL) / dpr,
+      offset.dy + (b - compT) / dpr,
     );
-    if (_texKey != key || _tex == null) {
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
+    final band = offset & size;
+
+    final g = _gradient;
+    final rad = g.angle * math.pi / 180;
+    final d = Offset(math.cos(rad), math.sin(rad));
+    // 把方向投影到带子四角，得到 u=0 / u=1 对应的两个像素点：
+    // 用 ui.Gradient.linear 显式给坐标，不依赖 Alignment 的归一化（非正方形
+    // 区域上 Alignment 渐变会把 stops 映射到 [−.5,.5]，遮罩会整体错位）。
+    double proj(Offset p) => p.dx * d.dx + p.dy * d.dy;
+    final p0 = proj(band.topLeft);
+    final p1 = proj(band.topRight);
+    final p2 = proj(band.bottomLeft);
+    final p3 = proj(band.bottomRight);
+    final pMin = math.min(math.min(p0, p1), math.min(p2, p3));
+    final pMax = math.max(math.max(p0, p1), math.max(p2, p3));
+    final spanP = math.max(1e-3, pMax - pMin);
+    final center = band.center;
+    final base = proj(center);
+    Offset at(double t) => center + d * (pMin + t * spanP - base);
+    final start = at(g.startFraction);
+    final finish = at(g.endFraction.clamp(g.startFraction + 1e-3, 1.0));
+
+    final layers = _layers(_blurRadius);
+    final vertical = g.angle == 90 || g.angle == 270;
+
+    final canvas = context.canvas;
+    // 外层隔离：所有档位都在这层里合成，避免半透明档位把下面的页面内容
+    // 透上来（那会让上半段又「变清楚」）。bounds 同样用 dst。
+    canvas.saveLayer(dst, Paint());
+    for (final layer in layers) {
+      // 该档负责的 u 区间 → 屏幕上的窄条（只对上下方向做裁剪）。
+      Rect? strip;
+      if (vertical) {
+        final h = size.height;
+        double yOf(double u) {
+          final sN = (g.startFraction + u * (g.endFraction - g.startFraction))
+              .clamp(0.0, 1.0);
+          return offset.dy + (g.angle == 90 ? sN : 1 - sN) * h;
+        }
+
+        final top = yOf(layer.u0).clamp(band.top, band.bottom);
+        final bottom = yOf(layer.u1).clamp(band.top, band.bottom);
+        if (bottom - top <= 0.5) continue;
+        strip = Rect.fromLTRB(band.left, top, band.right, bottom);
+      }
+
+      final mask = ui.Gradient.linear(
+        start,
+        finish,
+        [for (final a in layer.alphas) Color.fromRGBO(255, 255, 255, a)],
+        layer.stops,
+        TileMode.clamp,
+      );
+
+      // ⚠️ bounds 用 dst：用 band 的话 Skia 会把 filter 的输入一起裁掉，
+      // 结果就是「图层保存了，但一点没糊」。
+      //
+      // 合成用 plus（预乘 alpha 相加）：三角权重和恒为 1，所以 alpha 相加正好
+      // 回到 1（不透明），颜色就是加权平均。用 srcOver 的话两个半透明档会
+      // 留下 1-Π(1-a) 的空隙，下面的页面内容透上来，文字又「变清楚」了。
+      canvas.saveLayer(dst, Paint()..blendMode = BlendMode.plus);
+      canvas.clipRect(strip ?? dst);
       canvas.drawImageRect(
         image,
-        Rect.fromLTRB(l, t, r, b),
-        Rect.fromLTWH(0, 0, tw.toDouble(), th.toDouble()),
+        src,
+        dst,
         Paint()
           ..filterQuality = FilterQuality.medium
-          // 降采样时先轻糊一次：小图做 sampler 时过滤是线性的，但放大后未平滑
-          // 的像素仍会呈现方块；把纹理本身预先柔化，块状消失。
-          ..imageFilter = ui.ImageFilter.blur(sigmaX: 1.2, sigmaY: 1.2),
+          ..imageFilter = ui.ImageFilter.blur(
+            sigmaX: layer.sigma,
+            sigmaY: layer.sigma,
+            tileMode: TileMode.clamp,
+          ),
       );
-      final next = recorder.endRecording().toImageSync(tw, th);
-      _tex?.dispose();
-      _tex = next;
-      _texKey = key;
+      // dstIn：用三角权重把这一档擦掉，只留它负责的那一段。
+      canvas.drawRect(
+        strip ?? dst,
+        Paint()
+          ..blendMode = BlendMode.dstIn
+          ..shader = mask
+          ..isAntiAlias = false,
+      );
+      canvas.restore();
     }
-    final small = _tex!;
-
-    final (vec, gradOffset) = _gradient.gradient();
-    final shader = _shader;
-    // uniform 顺序必须与 .frag 声明一致。
-    shader
-      ..setFloat(0, size.width)
-      ..setFloat(1, size.height)
-      ..setFloat(2, tw.toDouble())
-      ..setFloat(3, th.toDouble())
-      // 组件左上角在纹理像素坐标里（可能为负，表示采样区向组件外扩了）。
-      ..setFloat(4, (compL - l) / scale)
-      ..setFloat(5, (compT - t) / scale)
-      ..setFloat(6, _blurRadius)
-      ..setFloat(7, vec.dx)
-      ..setFloat(8, vec.dy)
-      ..setFloat(9, gradOffset)
-      ..setFloat(10, _gradient.curve)
-      ..setFloat(11, dpr / scale)
-      ..setImageSampler(0, small);
-
-    context.canvas.drawRect(
-      offset & size,
-      Paint()
-        ..shader = shader
-        ..isAntiAlias = false,
-    );
+    canvas.restore();
 
     super.paint(context, offset);
   }

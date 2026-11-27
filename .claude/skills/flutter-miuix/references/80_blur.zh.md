@@ -91,36 +91,43 @@ Widget tree = Column(
 - 取样背景快照时向外扩约 3σ margin（配 `TileMode.clamp`），让模糊边缘有真实邻域，避免边缘变暗；但绘制被裁进组件自身边界（`clipRect`），不会溢出（无 shape 时也不溢出）。
 - 首帧快照就绪即出模糊（无异步着色器加载）。
 
-### 边缘渐隐：progressiveTextureBlur（已按 Kotlin 原版移植为 shader）
+### 边缘渐隐：progressiveTextureBlur（分档 + ImageFilter.blur）
 
 官方 compose 版在 `miuix-blur` 里：
 
 ```
 Modifier.progressiveTextureBlur(backdrop, shape, blurRadius,
     gradient = ProgressiveBlur.Top, noiseCoefficient, colors, ...)
-  → computeProgressiveGradient()        归一化成 gradVec + gradOffset
-  → createProgressiveBlurEffect()       逐像素 radius = maxRadius * (1 - smooth)
-  → 半径随位置变化的可分离高斯（H/V 两个 RenderEffect pass）
+  → computeProgressiveGradient()   归一化成 gradVec + gradOffset
+  → createProgressiveBlurEffect()  逐像素 radius = maxRadius * (1 - smooth)
+  → 半径随位置变化的可分离高斯（H/V 两 pass RenderEffect）
 ```
 
-**`flutter_miuix` 1.4.0 没有移植**。本项目按原版算法移植到
-`shaders/progressive_blur.frag` + `lib/ui/widgets/progressive_texture_blur.dart`
-（`ProgressiveBlur` / `MiuixProgressiveTextureBlur`）：
+`flutter_miuix` 1.4.0 没移植。**不要用 FragmentShader 自己卷**：40 个螺旋
+采样点近似二维高斯，半径一大采样就稀，画面会被拆成错位的块（「像碎成好几块
+散开」），而且每帧整条带子跑一遍逐像素循环，延迟也高。
 
-- `raw = clamp(dot(q, gradVec) + gradOffset, 0, 1)`、`smooth = pow(raw, curve)`、
-  `radius = maxRadius * (1 - smooth)`、`sigma = radius*.5 + .5` 与原版逐行一致。
-- 原版 H/V 两 pass，FragmentShader 只能单 pass → 二维螺旋采样（40 taps，
-  黄金角错开）近似同一核。
-- 卷积在 Dart 侧按 sigma 降采样的纹理上做（1×/2×，封顶 2×：原版 8× 有可分离
-  卷积撑着，单 pass 二维采样在 8× 上会出方块）；降采样时加 1.2σ 预模糊消方块。
-- 纹理按（快照身份+几何+参数）缓存，静止时不重建；清晰端 radius<0.6 直接采样
-  原图，所以是像素级锐利。
+项目内实现（`lib/ui/widgets/progressive_texture_blur.dart`）：
 
-**不要**回到「多张不同半径的 `MiuixTextureBlur` 叠加 + 三角遮罩」：那是多档
-混合的近似，半径不连续、每档一次全尺寸高斯（延迟大），递进方式与原版不同。
-也不要套裸 `BackdropFilter`（`ShaderMask`/`saveLayer` 后读不到下层）。
+- 半径分档：`u_i = pow(i/(n-1), 1/curve)`（原版曲线的反解），
+  `sigma_i = radius_i * .55 + .5`。
+- 相邻档用**三角权重**线性插值（Σw ≡ 1），所以是连续的「半糊」过渡。
+- 每档用 `ImageFilter.blur` 画：Impeller/Skia 内部是降采样 + 可分离高斯，
+  GPU 原生，没有块状伪影。清晰端 `sigma≈0.5` 等于原图，接缝不可见。
+- 遮罩用 `ui.Gradient.linear` **显式像素坐标**：`Alignment` 渐变在非正方形
+  区域上把 stops 映射到 `[-.5,.5]`，遮罩会整体错位（表现为「上面反而清晰」）。
+- 档位合成用 `BlendMode.plus`（预乘 alpha 相加）：三角权重和为 1，alpha 正好
+  加回 1（不透明）；用 `srcOver` 会留 `1-Π(1-a)` 的空隙，页面内容透上来，
+  文字又「变清楚」，还会和模糊副本叠成重影。
 
-### Bloom 高光边框### Bloom 高光边框### Bloom 高光边框### Bloom 高光边框
+另一个实测坑：**`canvas.saveLayer(bounds, Paint())` 的 bounds 不能取带子本身**，
+否则那次 `drawImageRect` 的 `imageFilter` 会连同输入一起被裁掉（一点没糊）。
+bounds 要用采样区（含 3σ 外扩的 dst）。
+
+**不要**回到「多张不同半径的 `MiuixTextureBlur` 叠加」或「单张糊图 + bandBlurMask
+擦除」，也不要用裸 `BackdropFilter`（`ShaderMask`/`saveLayer` 后读不到下层）。
+
+### Bloom 高光边框### Bloom 高光边框### Bloom 高光边框### Bloom 高光边框### Bloom 高光边框
 
 圆角矩形 SDF + 3D 半球 rim 法线 + 方向光，画出被照亮的玻璃边缘；`BlendMode.plus` 叠加。
 
