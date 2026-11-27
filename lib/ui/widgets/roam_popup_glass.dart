@@ -8,24 +8,23 @@ import 'glass_controls.dart';
 
 /// 弹层（底部抽屉 / 对话框）统一使用的玻璃表面。
 ///
-/// 标准态不用 `MiuixGlassPanel` 的折射管线，而是把库的两件现成东西拼在一起：
-///  - 模糊本体：库的纹理模糊 [MiuixTextureBlur]，从页面快照整块高斯；
-///  - 色调：库的 `MiuixGlassMaterials.dialogGlass(dark)` 三层色，
-///    原样转成 [MiuixTextureBlur] 的 [BlurColors]；描边用库的
-///    `MiuixGlassStrokes.forTheme(dark)`。
+/// 标准态**完全交给 miuix 的官方玻璃表面**：
+///  - 底部抽屉 → [miuixGlassBottomSheetSurface]
+///    （Kotlin `glassBottomSheetSurface`，内部 `MiuixGlassPanel` +
+///    `MiuixScrimBackdrop`：先按遮罩色压暗再采样，材质 / 顶部圆角 / 描边全由库出）
+///  - 对话框 → [miuixGlassDialogSurface]
+///    （Kotlin `glassDialogSurface`，圆角取 `MiuixDialogDefaults.cornerRadius`）
 ///
-/// 为什么不用 `GlassBottomSheet` 的官方表面函数：它内部走 `MiuixGlassPanel` 的
-/// 折射 shader，只在面板边缘做采样/拉伸，中间区域接近原图再叠色调，真机上
-/// 看起来就是「只有边缘一圈糊、中间实色」——也就是「局部模糊」。
-/// [MiuixTextureBlur] 是对整个面板矩形做一次高斯，整块均匀糊。
+/// 不再自己拼「纹理模糊 + 手调 BlurColors + 自绘描边」——那套东西和官方的
+/// 材质层、遮罩压暗顺序都对不齐，调参也调不出 ROM 的观感。
 ///
 /// [backdrop] 由调用方在**打开弹层之前**从 [RoamBackdropScope] 取（弹层自己的
-/// context 读不到页面级采样器）。没有快照时退回不透明兜底色。
+/// context 读不到页面级采样器）。没有快照时官方表面会退回不透明 containerColor。
 ///
 /// 三态（跟随「材质显示效果」/「高斯模糊效果」）：
-///  - 材质关闭 → 纯色，不模糊；
-///  - 性能优先 → 半透明磨砂 + 轮廓光（白边/浅黑边按明暗取）；
-///  - 标准     → 整块纹理模糊 + dialogGlass 色调 + 轮廓光。
+///  - 材质关闭 → 纯色，不模糊（官方表面在无 backdrop 时也是纯色，这里提前短路）；
+///  - 性能优先 → 半透明磨砂 + 轮廓光（不跑高斯）；
+///  - 标准     → 官方玻璃表面。
 class RoamPopupGlass extends StatelessWidget {
   const RoamPopupGlass({
     super.key,
@@ -40,7 +39,7 @@ class RoamPopupGlass extends StatelessWidget {
   /// 页面级背景采样源；为空时用不透明兜底色。
   final MiuixBackdrop? backdrop;
 
-  /// true：对话框（四角 28）；false：底部抽屉（只有上方两角）。
+  /// true：对话框（圆角 32）；false：底部抽屉（只有上方两角）。
   final bool isDialog;
 
   /// 强制深色（首页壁纸上的抽屉）。
@@ -86,114 +85,38 @@ class RoamPopupGlass extends StatelessWidget {
       );
     }
 
-    // 标准：整块纹理模糊 + dialogGlass 色调 + 轮廓光。
-    final material = MiuixGlassMaterials.dialogGlass(dark);
-    final blur =
-        (material.blurRadius * GlassRuntime.blurScale.value)
-            .clamp(0.0, MiuixBlurDefaults.maxBlurRadius);
-    final fallback = dark ? RoamColors.cardDark : RoamColors.cardLight;
-    final source = backdrop;
-    final ready = source != null && source.hasContent;
-    final rim = GlassRuntime.rimLight.value;
+    // 标准：官方玻璃表面。
+    final surface = isDialog
+        ? miuixGlassDialogSurface(
+            backdrop: backdrop,
+          )(
+            context,
+            MiuixDialogDefaults.cornerRadius,
+            MiuixGlassDialogDefaults.scrimColor,
+            1,
+            child,
+          )
+        : miuixGlassBottomSheetSurface(
+            backdrop: backdrop,
+          )(
+            context,
+            MiuixBottomSheetDefaults.cornerRadius,
+            MiuixGlassBottomSheetDefaults.scrimColor,
+            false,
+            child,
+          );
 
-    return ClipRRect(
-      borderRadius: _shapeRadius,
-      child: Stack(
-        children: [
-          // 底层：整块模糊 + 材质色调（不是透明度/遮罩，是库的色层）。
-          Positioned.fill(
-            child: ready
-                ? MiuixTextureBlur(
-                    backdrop: source,
-                    blurRadius: blur,
-                    colors: _blurColors(material, dark),
-                  )
-                : ColoredBox(color: fallback),
-          ),
-          // 内容决定面板大小。
-          if (!ready) ColoredBox(color: fallback, child: child) else child,
-          // 轮廓光：库的 stroke 色（上亮下隐），画在圆角内侧。
-          if (rim)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _GlassEdgePainter(
-                    radius: _shapeRadius,
-                    stroke: MiuixGlassStrokes.forTheme(dark),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  /// `MiuixGlassMaterial` 的三层色 → [MiuixTextureBlur] 的 [BlurColors]。
-  ///
-  /// 扩展混合模式（plusDarker / plusLighter，>=100）在纹理模糊里没有等价实现，
-  /// 用库自己给的 `fallback`（multiply / plus）代替，保证「模糊后调色」的顺序
-  /// 和官方材质一致。
-  BlurColors _blurColors(MiuixGlassMaterial material, bool dark) {
-    // 深色材质原本按「折射玻璃」调的：panel 会在边缘叠 alpha/折射增强，所以
-    // 中层压得很重。整块纹理模糊没有那层增强，原样照搬会糊成一块深灰，
-    // 背后内容几乎透不出来——这里把后两层压暗的 alpha 收一档。
-    final scale = dark ? 0.72 : 1.0;
-    return BlurColors(
-      blendColors: [
-        for (final layer in material.layers)
-          BlendColorEntry(
-            layer.color.withValues(alpha: layer.color.a * scale),
-            BlurBlendMode(layer.mode.fallback.index),
-          ),
-      ],
-    );
+    // 首页壁纸上的抽屉要深底白字：官方表面的材质跟主题走，这里把
+    // 主题强制成深色即可，不必再自己换一套颜色。
+    final forceDarkTheme = forceDark == true && !dark;
+    return forceDarkTheme
+        ? MiuixTheme(data: MiuixThemeData.of(Brightness.dark), child: surface)
+        : surface;
   }
 
   BorderRadius get _shapeRadius => isDialog
-      ? BorderRadius.circular(28)
+      ? BorderRadius.circular(MiuixDialogDefaults.cornerRadius)
       : BorderRadius.vertical(
           top: Radius.circular(MiuixBottomSheetDefaults.cornerRadius),
         );
-}
-
-/// 圆角描边：一层全周底色 + 一条从顶部往下淡出的高光，对应 miuix 玻璃的
-/// `MiuixGlassStroke`（`color` / `primary` / `secondary` 三档光）。
-class _GlassEdgePainter extends CustomPainter {
-  const _GlassEdgePainter({required this.radius, required this.stroke});
-
-  final BorderRadius radius;
-  final MiuixGlassStroke stroke;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rrect = radius
-        .toRRect(Offset.zero & size)
-        .deflate(stroke.width / 2);
-
-    canvas.drawRRect(
-      rrect,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = stroke.width
-        ..color = stroke.color,
-    );
-
-    canvas.drawRRect(
-      rrect,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = stroke.width
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [stroke.primary.color, stroke.primary.color.withValues(alpha: 0)],
-          stops: const [0, .7],
-        ).createShader(Offset.zero & size),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _GlassEdgePainter oldDelegate) =>
-      oldDelegate.radius != radius || oldDelegate.stroke != stroke;
 }

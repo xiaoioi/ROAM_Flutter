@@ -73,7 +73,7 @@ void main() {
     expect(decoration.border, isNotNull);
   });
 
-  testWidgets('标准：整块纹理模糊，不用折射 panel', (tester) async {
+  testWidgets('标准：走 miuix 官方玻璃表面', (tester) async {
     await tester.pumpWidget(
       _host(
         const Center(
@@ -91,12 +91,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(GlassRuntime.mode, RoamGlassMode.standard);
-    // 标准态不用会「只在边缘采样」的折射 panel：MiuixGlassPanel 的 shader 让
-    // 面板中间接近原图，真机看起来是局部模糊；改为库的纹理模糊整块高斯。
-    // 这里没有 backdrop，走不透明兜底色，所以只有 ClipRRect + 内容。
-    expect(find.byType(MiuixGlassPanel), findsNothing);
+    // 标准态就是库的官方表面（`glassDialogSurface` → MiuixGlassPanel +
+    // MiuixScrimBackdrop）：材质 / 圆角 / 描边全部由 miuix 出，不再自己拼。
+    // 没有 backdrop 时官方 surface 画不透明 containerColor，仍是完整面板。
+    expect(find.byType(MiuixGlassPanel), findsWidgets);
     expect(find.byType(BackdropFilter), findsNothing);
-    expect(find.byType(ClipRRect), findsWidgets);
   });
 
   testWidgets('轮廓光可单独关闭', (tester) async {
